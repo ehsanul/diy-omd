@@ -10,9 +10,13 @@ elapsedMillis secondaryTimeMillis;
 elapsedMillis mpuTimeMillis;
 
 Servo ESC;     // create servo object to control the ESC
+const int AXE_550_CALIBRATE = 0;
+const int OMD = 1;
+const int MODE = OMD;
 const int hallEffectSensorPin = 14;
 const int stopValue = 90;
-const int goValue = 150;
+const int reverseValue = 0;
+const int goValue = MODE == OMD ? 150 : 180;
 volatile int hallEffectCounter = 0;
 int revolutions = 0;
 int numGos = 0;
@@ -26,7 +30,7 @@ void setup() {
     int numMpuTries = 0;
 
     // retry up to thirty times in 3 seconds, loop forever if still failing
-    while (1) {
+    while (MODE == OMD) {
       delay(100);
       numMpuTries++;
       if (numMpuTries <= 30) {
@@ -118,7 +122,12 @@ bool goingUp = false;
 // 0 == init state
 // 1 == go state
 // 2 == stop state
-int motorState = 0;
+// 3 == reverse state
+const int INIT = 0;
+const int GO = 1;
+const int STOP = 2;
+const int REVERSE = 3;
+int motorState = INIT;
 
 void loop() {
   //pot.update();
@@ -128,31 +137,56 @@ void loop() {
     //lastValue = value;
   //}
 
-  if (motorState == 0) {
-    // init
+  if (motorState == INIT) {
     ESC.write(stopValue);
     //Serial.println("init");
-    if (secondaryTimeMillis > 3000) {
+    if (secondaryTimeMillis > 3000 && MODE == OMD) {
       //Serial.println("init done");
-      motorState = 1;
+      motorState = GO;
       secondaryTimeMillis = 0;
+    } else if (MODE == AXE_550_CALIBRATE) {
+      // Serial.println("AXE_550_calibrate init");
+      // Serial.println(secondaryTimeMillis);
+      digitalWrite(13, secondaryTimeMillis % 2000 > 1000 ? HIGH : LOW);
+
+      if (secondaryTimeMillis > 10000) {
+        motorState = GO;
+        secondaryTimeMillis = 0;
+      }
     }
-  } else if (motorState == 1) {
-    // go
+  } else if (motorState == GO) {
     ESC.write(goValue);
-    if (secondaryTimeMillis > 250) {
+    if (secondaryTimeMillis > 250 && MODE == OMD) {
       //Serial.println("go done");
-      motorState = 2;
+      motorState = STOP;
       secondaryTimeMillis = 0;
+    } else if (MODE == AXE_550_CALIBRATE) {
+      // Serial.println("AXE_550_calibrate go");
+      // Serial.println(secondaryTimeMillis % 1000);
+      digitalWrite(13, secondaryTimeMillis % 1000 > 500 ? HIGH : LOW);
+
+      if (secondaryTimeMillis > 10000) {
+        motorState = REVERSE;
+        secondaryTimeMillis = 0;
+      }
     }
-  } else {
+  } else if (motorState == STOP) {
     // stop
     ESC.write(stopValue);
     if (secondaryTimeMillis > 250 && numGos < 7200) {
       numGos++;
-      motorState = 1;
+      motorState = GO;
       secondaryTimeMillis = 0;
     }
+  } else if (motorState == REVERSE) {
+      Serial.println("AXE_550_calibrate reverse");
+      Serial.println(secondaryTimeMillis % 500);
+      digitalWrite(13, secondaryTimeMillis % 500 > 250 ? HIGH : LOW);
+      if (secondaryTimeMillis > 10000) {
+        ESC.write(stopValue);
+      } else {
+        ESC.write(reverseValue);
+      }
   }
 
   const int hallSensorValue = analogRead(hallEffectSensorPin);
@@ -180,7 +214,7 @@ void loop() {
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
-  Serial.println(temp.temperature);
+   Serial.println(temp.temperature);
   // loop forever when too hot, ie require user to reboot so that they are in
   // control of when it turns back on.
   while (temp.temperature > 45.0) {
