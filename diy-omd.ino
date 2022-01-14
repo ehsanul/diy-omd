@@ -1,106 +1,44 @@
 #include <Servo.h>
 #include <Wire.h>
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
-Adafruit_MPU6050 mpu;
+// Data wire is plugged into pin 2 on the Arduino
+#define ONE_WIRE_BUS 5
+
+// Setup a oneWire instance to communicate with any OneWire devices
+// (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature.
+DallasTemperature temperatureSensors(&oneWire);
 
 elapsedMillis timeMillis;
 elapsedMillis secondaryTimeMillis;
-elapsedMillis mpuTimeMillis;
+elapsedMillis tempTimeMillis;
 
-Servo ESC; // create servo object to control the ESC
-const int AXE_550_CALIBRATE = 0;
-const int OMD = 1;
-const int MODE = OMD;
+Servo ESC;     // create servo object to control the ESC
+const int OMD = 0;
+const int BALANCE = 1;
+const int AXE_550_CALIBRATE = 2;
+const int MODE = BALANCE;
 const int hallEffectSensorPin = 14;
 const int stopValue = 90;
 const int reverseValue = 0;
-const int goValue = MODE == OMD ? 133 : 180;
+const int OMD_goValue = 132;
+const int BALANCE_goValue = 108; // is closer to a resonant frequency on the case
+const int AXE_550_CALIBRATE_goValue = 180;
+const int goValue = MODE == OMD ? OMD_goValue : (
+  MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
+);
 volatile int hallEffectCounter = 0;
 int revolutions = 0;
 int numGos = 0;
+const int SWITCH_DELAY = 250;
 
 void setup() {
   Serial.begin(9600);
-  delay(3000); // wait for serial without requiring it
-
-  if (!mpu.begin()) {
-    Serial.println("Failed to find MPU6050 chip");
-    int numMpuTries = 0;
-
-    // retry up to thirty times in 3 seconds, loop forever if still failing
-    while (MODE == OMD) {
-      delay(100);
-      numMpuTries++;
-      if (numMpuTries <= 30) {
-        if (mpu.begin()) {
-          Serial.println("Retried and found MPU6050 chip");
-          break;
-        }
-      }
-    }
-  }
-
-  Serial.println("MPU6050 Found!");
-  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-  Serial.print("Accelerometer range set to: ");
-  switch (mpu.getAccelerometerRange()) {
-  case MPU6050_RANGE_2_G:
-    Serial.println("+-2G");
-    break;
-  case MPU6050_RANGE_4_G:
-    Serial.println("+-4G");
-    break;
-  case MPU6050_RANGE_8_G:
-    Serial.println("+-8G");
-    break;
-  case MPU6050_RANGE_16_G:
-    Serial.println("+-16G");
-    break;
-  }
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  Serial.print("Gyro range set to: ");
-  switch (mpu.getGyroRange()) {
-  case MPU6050_RANGE_250_DEG:
-    Serial.println("+- 250 deg/s");
-    break;
-  case MPU6050_RANGE_500_DEG:
-    Serial.println("+- 500 deg/s");
-    break;
-  case MPU6050_RANGE_1000_DEG:
-    Serial.println("+- 1000 deg/s");
-    break;
-  case MPU6050_RANGE_2000_DEG:
-    Serial.println("+- 2000 deg/s");
-    break;
-  }
-
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-  Serial.print("Filter bandwidth set to: ");
-  switch (mpu.getFilterBandwidth()) {
-  case MPU6050_BAND_260_HZ:
-    Serial.println("260 Hz");
-    break;
-  case MPU6050_BAND_184_HZ:
-    Serial.println("184 Hz");
-    break;
-  case MPU6050_BAND_94_HZ:
-    Serial.println("94 Hz");
-    break;
-  case MPU6050_BAND_44_HZ:
-    Serial.println("44 Hz");
-    break;
-  case MPU6050_BAND_21_HZ:
-    Serial.println("21 Hz");
-    break;
-  case MPU6050_BAND_10_HZ:
-    Serial.println("10 Hz");
-    break;
-  case MPU6050_BAND_5_HZ:
-    Serial.println("5 Hz");
-    break;
-  }
+  temperatureSensors.setWaitForConversion(false);
 
   pinMode(hallEffectSensorPin, INPUT);
   ESC.attach(24,1000,2000); // (pin, min pulse width, max pulse width in microseconds) 
@@ -108,7 +46,7 @@ void setup() {
 
   timeMillis = 0;
   secondaryTimeMillis = 0;
-  mpuTimeMillis = 0;
+  tempTimeMillis = 0;
 }
 
 // we use two thresholds to ensure we have the right direction of change, and
@@ -130,17 +68,16 @@ const int REVERSE = 3;
 int motorState = INIT;
 
 void loop() {
-  //pot.update();
-  //int value = map(pot.getValue(), 0, 1024, 90, 130);
-  //if(value != lastValue) {
-		//Serial.println(value);
-    //lastValue = value;
-  //}
+  if (tempTimeMillis > 60000) {
+    tempTimeMillis = 0;
+    temperatureSensors.requestTemperatures();
+    Serial.println("Temp C @ Index 0: " + String(temperatureSensors.getTempCByIndex(0))); // Get the first temperature.
+  }
 
   if (motorState == INIT) {
     ESC.write(stopValue);
     //Serial.println("init");
-    if (secondaryTimeMillis > 3000 && MODE == OMD) {
+    if (secondaryTimeMillis > 3000 && (MODE == OMD || MODE == BALANCE)) {
       //Serial.println("init done");
       motorState = GO;
       secondaryTimeMillis = 0;
@@ -155,11 +92,14 @@ void loop() {
       }
     }
   } else if (motorState == GO) {
+    digitalWrite(13, HIGH);
     ESC.write(goValue);
-    if (secondaryTimeMillis > 250 && MODE == OMD) {
+    if (secondaryTimeMillis > SWITCH_DELAY && MODE == OMD) {
       //Serial.println("go done");
       motorState = STOP;
       secondaryTimeMillis = 0;
+    } else if (MODE == BALANCE) {
+      // do nothing: we just keep going in balance mode!
     } else if (MODE == AXE_550_CALIBRATE) {
       // Serial.println("AXE_550_calibrate go");
       // Serial.println(secondaryTimeMillis % 1000);
@@ -171,9 +111,10 @@ void loop() {
       }
     }
   } else if (motorState == STOP) {
+    digitalWrite(13, LOW);
     // stop
     ESC.write(stopValue);
-    if (secondaryTimeMillis > 250 && numGos < 7200) {
+    if (secondaryTimeMillis > SWITCH_DELAY && numGos < 7200) {
       numGos++;
       motorState = GO;
       secondaryTimeMillis = 0;
@@ -210,22 +151,6 @@ void loop() {
     }
   }
 
-  if (mpuTimeMillis > 60000) {
-    mpuTimeMillis = 0;
-
-    /* Get new sensor events with the readings */
-    sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
-
-     Serial.println(temp.temperature);
-    // loop forever when too hot, ie require user to reboot so that they are in
-    // control of when it turns back on.
-    while (temp.temperature > 45.0) {
-      ESC.write(stopValue);
-      delay(500);
-    }
-  }
-    
   if (timeMillis > 50) {
     float frequency = (float) revolutions / ((float) timeMillis / 1000.0);
     float rpm = frequency * 60.0; 
