@@ -75,41 +75,9 @@ void loop() {
   }
 
   if (motorState == INIT) {
-    ESC.write(stopValue);
-    //Serial.println("init");
-    if (secondaryTimeMillis > 3000 && (MODE == OMD || MODE == BALANCE)) {
-      //Serial.println("init done");
-      motorState = GO;
-      secondaryTimeMillis = 0;
-    } else if (MODE == AXE_550_CALIBRATE) {
-      // Serial.println("AXE_550_calibrate init");
-      // Serial.println(secondaryTimeMillis);
-      digitalWrite(13, secondaryTimeMillis % 2000 > 1000 ? HIGH : LOW);
-
-      if (secondaryTimeMillis > 10000) {
-        motorState = GO;
-        secondaryTimeMillis = 0;
-      }
-    }
+  	init();
   } else if (motorState == GO) {
-    digitalWrite(13, HIGH);
-    ESC.write(goValue);
-    if (secondaryTimeMillis > SWITCH_DELAY && MODE == OMD) {
-      //Serial.println("go done");
-      motorState = STOP;
-      secondaryTimeMillis = 0;
-    } else if (MODE == BALANCE) {
-      // do nothing: we just keep going in balance mode!
-    } else if (MODE == AXE_550_CALIBRATE) {
-      // Serial.println("AXE_550_calibrate go");
-      // Serial.println(secondaryTimeMillis % 1000);
-      digitalWrite(13, secondaryTimeMillis % 1000 > 500 ? HIGH : LOW);
-
-      if (secondaryTimeMillis > 10000) {
-        motorState = REVERSE;
-        secondaryTimeMillis = 0;
-      }
-    }
+	go();
   } else if (motorState == STOP) {
     digitalWrite(13, LOW);
     // stop
@@ -131,6 +99,21 @@ void loop() {
   }
 
   const int hallSensorValue = analogRead(hallEffectSensorPin);
+  processHallSensor(hallSensorValue);
+
+  if (timeMillis > 50) {
+    float frequency = (float) revolutions / ((float) timeMillis / 1000.0);
+    float rpm = frequency * 60.0;
+    //Serial.println(rpm);
+    //Serial.println((float) revolutions / ((float) timeMillis / 1000.0));
+    revolutions = 0;
+    timeMillis = 0;
+  }
+  // Serial.println(hallEffectCounter);
+  // delay(1);
+}
+
+void processHallSensor(hallSensorValue) {
   if (goingUp) {
     if (hallSensorValue > HALL_THRESHOLD2) {
       reachedThreshold2 = true;
@@ -150,19 +133,48 @@ void loop() {
       goingUp = true;
     }
   }
-
-  if (timeMillis > 50) {
-    float frequency = (float) revolutions / ((float) timeMillis / 1000.0);
-    float rpm = frequency * 60.0; 
-    //Serial.println(rpm);
-    //Serial.println((float) revolutions / ((float) timeMillis / 1000.0));
-    revolutions = 0;
-    timeMillis = 0;
-  }
-  // Serial.println(hallEffectCounter);
-  // delay(1);
 }
 
 void incrementHallEffectCount() {
   hallEffectCounter++;
+}
+
+void init() {
+  ESC.write(stopValue);
+  //Serial.println("init");
+  if (secondaryTimeMillis > 3000 && (MODE == OMD || MODE == BALANCE)) {
+    //Serial.println("init done");
+    motorState = GO;
+    secondaryTimeMillis = 0;
+  } else if (MODE == AXE_550_CALIBRATE) {
+    // Serial.println("AXE_550_calibrate init");
+    // Serial.println(secondaryTimeMillis);
+    digitalWrite(13, secondaryTimeMillis % 2000 > 1000 ? HIGH : LOW);
+
+    if (secondaryTimeMillis > 10000) {
+      motorState = GO;
+      secondaryTimeMillis = 0;
+    }
+  }
+}
+
+void go() {
+  digitalWrite(13, HIGH);
+  ESC.write(goValue);
+  if (secondaryTimeMillis > SWITCH_DELAY && MODE == OMD) {
+	//Serial.println("go done");
+	motorState = STOP;
+	secondaryTimeMillis = 0;
+  } else if (MODE == BALANCE) {
+	// do nothing: we just keep going in balance mode!
+  } else if (MODE == AXE_550_CALIBRATE) {
+	// Serial.println("AXE_550_calibrate go");
+	// Serial.println(secondaryTimeMillis % 1000);
+	digitalWrite(13, secondaryTimeMillis % 1000 > 500 ? HIGH : LOW);
+
+	if (secondaryTimeMillis > 10000) {
+	  motorState = REVERSE;
+	  secondaryTimeMillis = 0;
+	}
+  }
 }
