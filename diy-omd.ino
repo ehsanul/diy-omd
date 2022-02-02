@@ -2,6 +2,9 @@
 #include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <ArduinoJson.h>
+
+StaticJsonDocument<200> doc;
 
 // Data wire is plugged into pin 2 on the Arduino
 #define ONE_WIRE_BUS 5
@@ -18,9 +21,10 @@ elapsedMillis secondaryTimeMillis;
 elapsedMillis tempTimeMillis;
 
 Servo ESC;     // create servo object to control the ESC
-const int OMD = 0;
-const int BALANCE = 1;
-const int AXE_550_CALIBRATE = 2;
+const int BALANCE = 100;
+const int OMD = 101;
+const int AXE_550_CALIBRATE = 102;
+const int OFF = 103;
 const int MODE = BALANCE;
 const int hallEffectSensorPin = 14;
 const int stopValue = 90;
@@ -34,10 +38,26 @@ const int goValue = MODE == OMD ? OMD_goValue : (
 volatile int hallEffectCounter = 0;
 int revolutions = 0;
 int numGos = 0;
-const int SWITCH_DELAY = 250;
+int switchDelay = 250;
+
+SoftwareSerial btSerial(7,8); // RX, TX (from pinout, not BL)
+String inData;
+const char PARSE_END = '>';
+const char PARSE_START = '<';
+bool start_parse = false;
+const int MIN_SPEED = 100;
+const int MAX_SPEED = 130;
+
+DynamicJsonDocument kModeToCode(1024);
+
+kModeToCode["BALANCE"] = "100";
+kModeToCode["OMD"] = "101";
+kModeToCode["AXE_550_CALIBRATE"] = "102";
+kModeToCode["OFF"] = "103";
 
 void setup() {
   Serial.begin(9600);
+  btSerial.begin(9600);
   temperatureSensors.setWaitForConversion(false);
 
   pinMode(hallEffectSensorPin, INPUT);
@@ -74,33 +94,16 @@ void loop() {
     Serial.println("Temp C @ Index 0: " + String(temperatureSensors.getTempCByIndex(0))); // Get the first temperature.
   }
 
-  if (motorState == INIT) {
-  	init();
-  } else if (motorState == GO) {
-	go();
-  } else if (motorState == STOP) {
-    digitalWrite(13, LOW);
-    // stop
-    ESC.write(stopValue);
-    if (secondaryTimeMillis > SWITCH_DELAY && numGos < 7200) {
-      numGos++;
-      motorState = GO;
-      secondaryTimeMillis = 0;
-    }
-  } else if (motorState == REVERSE) {
-      Serial.println("AXE_550_calibrate reverse");
-      Serial.println(secondaryTimeMillis % 500);
-      digitalWrite(13, secondaryTimeMillis % 500 > 250 ? HIGH : LOW);
-      if (secondaryTimeMillis > 10000) {
-        ESC.write(stopValue);
-      } else {
-        ESC.write(reverseValue);
-      }
-  }
+  processIncomingBTData();
+  operateMotor();
 
   const int hallSensorValue = analogRead(hallEffectSensorPin);
   processHallSensor(hallSensorValue);
 
+  logRPM();
+}
+
+void logRPM() {
   if (timeMillis > 50) {
     float frequency = (float) revolutions / ((float) timeMillis / 1000.0);
     float rpm = frequency * 60.0;
@@ -135,10 +138,6 @@ void processHallSensor(hallSensorValue) {
   }
 }
 
-void incrementHallEffectCount() {
-  hallEffectCounter++;
-}
-
 void init() {
   ESC.write(stopValue);
   //Serial.println("init");
@@ -161,20 +160,178 @@ void init() {
 void go() {
   digitalWrite(13, HIGH);
   ESC.write(goValue);
-  if (secondaryTimeMillis > SWITCH_DELAY && MODE == OMD) {
-	//Serial.println("go done");
-	motorState = STOP;
-	secondaryTimeMillis = 0;
+  if (secondaryTimeMillis > switchDelay && MODE == OMD) {
+		//Serial.println("go done");
+		motorState = STOP;
+		secondaryTimeMillis = 0;
   } else if (MODE == BALANCE) {
-	// do nothing: we just keep going in balance mode!
+		// do nothing: we just keep going in balance mode!
   } else if (MODE == AXE_550_CALIBRATE) {
-	// Serial.println("AXE_550_calibrate go");
-	// Serial.println(secondaryTimeMillis % 1000);
-	digitalWrite(13, secondaryTimeMillis % 1000 > 500 ? HIGH : LOW);
+		// Serial.println("AXE_550_calibrate go");
+		// Serial.println(secondaryTimeMillis % 1000);
+		digitalWrite(13, secondaryTimeMillis % 1000 > 500 ? HIGH : LOW);
 
-	if (secondaryTimeMillis > 10000) {
-	  motorState = REVERSE;
-	  secondaryTimeMillis = 0;
-	}
+		if (secondaryTimeMillis > 10000) {
+			motorState = REVERSE;
+			secondaryTimeMillis = 0;
+		}
   }
+}
+
+void processIncomingBTData() {
+  /*if (Serial.available() > 0) {
+    btSerial.write(Serial.read());
+  }*/
+
+  char appData;
+
+  if (btSerial.available() > 0) {
+    appData = btSerial.read();
+
+    if (appData == PARSE_START || start == true) {
+      inData += appData;  // save the data in string format
+      start = true;
+    }
+    //Serial.println(appData);
+  }
+
+  if (appData == PARSE_END) {
+    start = false;
+    processJSON();
+  }
+}
+
+void processJSON() {
+  Serial.println("Processing JSON...");
+  inData.replace(">", "");
+  inData.replace("<", "");
+  Serial.println("Parsing the follow: ");
+  Serial.println(inData);
+
+  // Deserialize the JSON document
+  char buffer[50];
+  inData.toCharArray(buffer, 50);
+  DeserializationError error = deserializeJson(doc, buffer);
+  inData = "";
+
+  // Test if parsing succeeds.
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.f_str());
+    return;
+  }
+
+  processCmd();
+}
+
+void processCmd() {
+  const char* modeString = doc["mode"];
+  const char* on = doc["on"];
+  const char* off = doc["off"];
+  const char* speed = doc["hz"];
+
+  if (modeString) {
+    processMode(modeString);
+    return;
+  }
+
+  if (on) {
+    // TODO: Change value for on sequence
+    int onSequenceMilli = atoi(on);
+    Serial.println("On sequence: ");
+    Serial.println(onSequenceMilli);
+    switchDelay = onSequenceMilli;
+		secondaryTimeMillis = 0;
+    return;
+  }
+
+  if (off) {
+    // TODO: Change value for off sequence
+    int offSequenceMilli = atoi(off);
+    Serial.println("Off sequence: ");
+    Serial.println(offSequenceMilli);
+    return;
+  }
+
+  if (speed) {
+    // TODO: Change value for off sequence
+    int speedValue = atoi(speed);
+    Serial.println("Speed value: ");
+    Serial.println(speedValue);
+		switch (MODE) {
+			case OMD: {
+				OMD_goValue = speedValue;
+				break;
+			}
+
+			case BALANCE: {
+				BALANCE_goValue = speedValue;
+				break;
+			}
+
+			case OMD: {
+				AXE_550_CALIBRATE_goValue = speedValue;
+				break;
+			}
+		}
+    return;
+  }
+}
+
+void processMode(mode) {
+  int mode = atoi(kModeToCode[modeString]);
+  switch (mode) {
+    case OMD: {
+			MODE = OMD;
+      break;
+    }
+
+    case BALANCE: {
+			MODE = BALANCE;
+      break;
+    }
+
+    case AXE_550_CALIBRATE: {
+			MODE = AXE_550_CALIBRATE;
+      break;
+    }
+
+    case OFF: {
+			MODE = OFF;
+      break;
+    }
+  }
+}
+
+void operateMotor() {
+  if (motorState == INIT) {
+  	init();
+  } else if (motorState == GO) {
+		go();
+  } else if (motorState == STOP) {
+    digitalWrite(13, LOW);
+    // stop
+    ESC.write(stopValue);
+    if (secondaryTimeMillis > switchDelay && numGos < 7200) {
+      numGos++;
+      motorState = GO;
+      secondaryTimeMillis = 0;
+    }
+  } else if (motorState == REVERSE) {
+      Serial.println("AXE_550_calibrate reverse");
+      Serial.println(secondaryTimeMillis % 500);
+      digitalWrite(13, secondaryTimeMillis % 500 > 250 ? HIGH : LOW);
+      if (secondaryTimeMillis > 10000) {
+        ESC.write(stopValue);
+      } else {
+        ESC.write(reverseValue);
+      }
+  } else if (motorState == OFF) {
+		digitalWrite(13, LOW);
+		ESC.write(stopValue);
+	}
+}
+
+void incrementHallEffectCount() {
+  hallEffectCounter++;
 }
