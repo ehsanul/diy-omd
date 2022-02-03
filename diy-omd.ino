@@ -26,7 +26,7 @@ const int BALANCE = 100;
 const int OMD = 101;
 const int AXE_550_CALIBRATE = 102;
 const int OFF = 103;
-int MODE = BALANCE;
+int MODE = OMD;
 const int hallEffectSensorPin = 14;
 const int stopValue = 90;
 const int reverseValue = 0;
@@ -57,7 +57,7 @@ kModeToCode["OMD"] = "101";
 kModeToCode["AXE_550_CALIBRATE"] = "102";
 kModeToCode["OFF"] = "103";*/
 
-char json[] = "{\"BALANCE\":\"100\",\"OMD\"101\", \"AXE_550_CALIBRATE\":\"102\",\"OFF\": \"103\"}";
+char json[] = "{\"BALANCE\":\"100\",\"OMD\":\"101\", \"CALIBRATE\":\"102\",\"OFF\": \"103\"}";
 
 DynamicJsonDocument kModeToCode(1024);
 DeserializationError error = deserializeJson(kModeToCode, json);
@@ -186,23 +186,33 @@ void go() {
 
 void processMode(const char* modeString) {
   int mode = atoi(kModeToCode[modeString]);
+
   switch (mode) {
     case OMD: {
+			Serial.println("Switching mode to");
+			Serial.println("OMD");
 			MODE = OMD;
+			secondaryTimeMillis = 0;
       break;
     }
 
     case BALANCE: {
+			Serial.println("Switching mode to");
+			Serial.println("BALANCE");
 			MODE = BALANCE;
       break;
     }
 
     case AXE_550_CALIBRATE: {
+			Serial.println("Switching mode to");
+			Serial.println("CALIBRATE");
 			MODE = AXE_550_CALIBRATE;
       break;
     }
 
     case OFF: {
+			Serial.println("Switching mode to");
+			Serial.println("OFF");
 			MODE = OFF;
       break;
     }
@@ -210,10 +220,6 @@ void processMode(const char* modeString) {
 }
 
 void processIncomingBTData() {
-  /*if (Serial.available() > 0) {
-    btSerial.write(Serial.read());
-  }*/
-
   char appData;
 
   if (btSerial.available() > 0) {
@@ -309,7 +315,6 @@ void processCmd() {
   }
 }
 
-
 void operateMotor() {
   if (motorState == INIT) {
   	init();
@@ -319,8 +324,8 @@ void operateMotor() {
     digitalWrite(13, LOW);
     // stop
     ESC.write(stopValue);
-    if (secondaryTimeMillis > switchDelay && numGos < 7200) {
-      numGos++;
+    if (secondaryTimeMillis > switchDelay) {
+      //numGos++;
       motorState = GO;
       secondaryTimeMillis = 0;
     }
