@@ -1,8 +1,9 @@
+#include <ArduinoJson.h>
 #include <Servo.h>
+#include <SoftwareSerial.h>
 #include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <ArduinoJson.h>
 
 StaticJsonDocument<200> doc;
 
@@ -25,14 +26,14 @@ const int BALANCE = 100;
 const int OMD = 101;
 const int AXE_550_CALIBRATE = 102;
 const int OFF = 103;
-const int MODE = BALANCE;
+int MODE = BALANCE;
 const int hallEffectSensorPin = 14;
 const int stopValue = 90;
 const int reverseValue = 0;
-const int OMD_goValue = 132;
-const int BALANCE_goValue = 108; // is closer to a resonant frequency on the case
-const int AXE_550_CALIBRATE_goValue = 180;
-const int goValue = MODE == OMD ? OMD_goValue : (
+int OMD_goValue = 132;
+int BALANCE_goValue = 108; // is closer to a resonant frequency on the case
+int AXE_550_CALIBRATE_goValue = 180;
+int goValue = MODE == OMD ? OMD_goValue : (
   MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
 );
 volatile int hallEffectCounter = 0;
@@ -42,18 +43,24 @@ int switchDelay = 250;
 
 SoftwareSerial btSerial(7,8); // RX, TX (from pinout, not BL)
 String inData;
+bool start = false;
 const char PARSE_END = '>';
 const char PARSE_START = '<';
 bool start_parse = false;
 const int MIN_SPEED = 100;
 const int MAX_SPEED = 130;
 
-DynamicJsonDocument kModeToCode(1024);
+/*StaticJsonDocument<200> kModeToCode;
 
 kModeToCode["BALANCE"] = "100";
 kModeToCode["OMD"] = "101";
 kModeToCode["AXE_550_CALIBRATE"] = "102";
-kModeToCode["OFF"] = "103";
+kModeToCode["OFF"] = "103";*/
+
+char json[] = "{\"BALANCE\":\"100\",\"OMD\"101\", \"AXE_550_CALIBRATE\":\"102\",\"OFF\": \"103\"}";
+
+DynamicJsonDocument kModeToCode(1024);
+DeserializationError error = deserializeJson(kModeToCode, json);
 
 void setup() {
   Serial.begin(9600);
@@ -96,10 +103,7 @@ void loop() {
 
   processIncomingBTData();
   operateMotor();
-
-  const int hallSensorValue = analogRead(hallEffectSensorPin);
-  processHallSensor(hallSensorValue);
-
+  processHallSensor();
   logRPM();
 }
 
@@ -116,7 +120,9 @@ void logRPM() {
   // delay(1);
 }
 
-void processHallSensor(hallSensorValue) {
+void processHallSensor() {
+  const int hallSensorValue = analogRead(hallEffectSensorPin);
+
   if (goingUp) {
     if (hallSensorValue > HALL_THRESHOLD2) {
       reachedThreshold2 = true;
@@ -175,6 +181,31 @@ void go() {
 			motorState = REVERSE;
 			secondaryTimeMillis = 0;
 		}
+  }
+}
+
+void processMode(const char* modeString) {
+  int mode = atoi(kModeToCode[modeString]);
+  switch (mode) {
+    case OMD: {
+			MODE = OMD;
+      break;
+    }
+
+    case BALANCE: {
+			MODE = BALANCE;
+      break;
+    }
+
+    case AXE_550_CALIBRATE: {
+			MODE = AXE_550_CALIBRATE;
+      break;
+    }
+
+    case OFF: {
+			MODE = OFF;
+      break;
+    }
   }
 }
 
@@ -269,7 +300,7 @@ void processCmd() {
 				break;
 			}
 
-			case OMD: {
+			case AXE_550_CALIBRATE: {
 				AXE_550_CALIBRATE_goValue = speedValue;
 				break;
 			}
@@ -278,30 +309,6 @@ void processCmd() {
   }
 }
 
-void processMode(mode) {
-  int mode = atoi(kModeToCode[modeString]);
-  switch (mode) {
-    case OMD: {
-			MODE = OMD;
-      break;
-    }
-
-    case BALANCE: {
-			MODE = BALANCE;
-      break;
-    }
-
-    case AXE_550_CALIBRATE: {
-			MODE = AXE_550_CALIBRATE;
-      break;
-    }
-
-    case OFF: {
-			MODE = OFF;
-      break;
-    }
-  }
-}
 
 void operateMotor() {
   if (motorState == INIT) {
