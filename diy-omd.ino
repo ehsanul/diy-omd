@@ -39,7 +39,8 @@ int goValue = MODE == OMD ? OMD_goValue : (
 volatile int hallEffectCounter = 0;
 int revolutions = 0;
 int numGos = 0;
-int switchDelay = 250;
+int onSequence = 250;
+int offSequence = 250;
 
 SoftwareSerial btSerial(7,8); // RX, TX (from pinout, not BL)
 String inData;
@@ -166,7 +167,7 @@ void init() {
 void go() {
   digitalWrite(13, HIGH);
   ESC.write(goValue);
-  if (secondaryTimeMillis > switchDelay && MODE == OMD) {
+  if (secondaryTimeMillis > onSequence && MODE == OMD) {
 		//Serial.println("go done");
 		motorState = STOP;
 		secondaryTimeMillis = 0;
@@ -277,7 +278,7 @@ void processCmd() {
     int onSequenceMilli = atoi(on);
     Serial.println("On sequence: ");
     Serial.println(onSequenceMilli);
-    switchDelay = onSequenceMilli;
+    onSequence = onSequenceMilli;
 		secondaryTimeMillis = 0;
     return;
   }
@@ -287,6 +288,8 @@ void processCmd() {
     int offSequenceMilli = atoi(off);
     Serial.println("Off sequence: ");
     Serial.println(offSequenceMilli);
+    offSequence = offSequenceMilli;
+		secondaryTimeMillis = 0;
     return;
   }
 
@@ -324,7 +327,7 @@ void operateMotor() {
     digitalWrite(13, LOW);
     // stop
     ESC.write(stopValue);
-    if (secondaryTimeMillis > switchDelay) {
+    if (secondaryTimeMillis > offSequence) {
       //numGos++;
       motorState = GO;
       secondaryTimeMillis = 0;
