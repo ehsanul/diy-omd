@@ -102,11 +102,11 @@ void loop() {
   processHallSensor();
   logRPM();
 
-	if (testMillis > 500) {
-		test++;
-		transmitBTData("temp", (String)test);
-		testMillis = 0;
-	}
+  if (testMillis > 500) {
+    test++;
+    transmitBTData("temp", (String)test);
+    testMillis = 0;
+  }
 }
 
 void transmitBTData(String key, String value) {
@@ -177,50 +177,50 @@ void go() {
   digitalWrite(13, HIGH);
   ESC.write(goValue);
   if (secondaryTimeMillis > onSequence && MODE == OMD) {
-		//Serial.println("go done");
-		motorState = STOP;
-		secondaryTimeMillis = 0;
+    //Serial.println("go done");
+    motorState = STOP;
+    secondaryTimeMillis = 0;
   } else if (MODE == BALANCE) {
-		// do nothing: we just keep going in balance mode!
+    // do nothing: we just keep going in balance mode!
   } else if (MODE == AXE_550_CALIBRATE) {
-		// Serial.println("AXE_550_calibrate go");
-		// Serial.println(secondaryTimeMillis % 1000);
-		digitalWrite(13, secondaryTimeMillis % 1000 > 500 ? HIGH : LOW);
+    // Serial.println("AXE_550_calibrate go");
+    // Serial.println(secondaryTimeMillis % 1000);
+    digitalWrite(13, secondaryTimeMillis % 1000 > 500 ? HIGH : LOW);
 
-		if (secondaryTimeMillis > 10000) {
-			motorState = REVERSE;
-			secondaryTimeMillis = 0;
-		}
+    if (secondaryTimeMillis > 10000) {
+      motorState = REVERSE;
+      secondaryTimeMillis = 0;
+    }
   }
 }
 
 void processMode(const char* modeString) {
   int mode = atoi(kModeToCode[modeString]);
 
-	Serial.println("Switching mode to");
+  Serial.println("Switching mode to");
   switch (mode) {
     case OMD: {
-			Serial.println("OMD");
-			MODE = OMD;
-			secondaryTimeMillis = 0;
+      Serial.println("OMD");
+      MODE = OMD;
+      secondaryTimeMillis = 0;
       break;
     }
 
     case BALANCE: {
-			Serial.println("BALANCE");
-			MODE = BALANCE;
+      Serial.println("BALANCE");
+      MODE = BALANCE;
       break;
     }
 
     case AXE_550_CALIBRATE: {
-			Serial.println("CALIBRATE");
-			MODE = AXE_550_CALIBRATE;
+      Serial.println("CALIBRATE");
+      MODE = AXE_550_CALIBRATE;
       break;
     }
 
     case OFF: {
-			Serial.println("OFF");
-			MODE = OFF;
+      Serial.println("OFF");
+      MODE = OFF;
       break;
     }
   }
@@ -295,7 +295,7 @@ void processCmd() {
     Serial.println("Off sequence: ");
     Serial.println(offSequenceMilli);
     offSequence = offSequenceMilli;
-		secondaryTimeMillis = 0;
+    secondaryTimeMillis = 0;
     return;
   }
 
@@ -304,31 +304,31 @@ void processCmd() {
     int speedValue = atoi(speed);
     Serial.println("Speed value: ");
     Serial.println(speedValue);
-		switch (MODE) {
-			case OMD: {
-				OMD_goValue = speedValue;
-				break;
-			}
+    switch (MODE) {
+      case OMD: {
+	OMD_goValue = speedValue;
+	break;
+      }
 
-			case BALANCE: {
-				BALANCE_goValue = speedValue;
-				break;
-			}
+      case BALANCE: {
+	BALANCE_goValue = speedValue;
+	break;
+      }
 
-			case AXE_550_CALIBRATE: {
-				AXE_550_CALIBRATE_goValue = speedValue;
-				break;
-			}
-		}
+      case AXE_550_CALIBRATE: {
+	AXE_550_CALIBRATE_goValue = speedValue;
+	break;
+      }
+    }
     return;
   }
 }
 
 void operateMotor() {
   if (motorState == INIT) {
-  	init();
+    init();
   } else if (motorState == GO) {
-		go();
+    go();
   } else if (motorState == STOP) {
     digitalWrite(13, LOW);
     // stop
@@ -339,18 +339,18 @@ void operateMotor() {
       secondaryTimeMillis = 0;
     }
   } else if (motorState == REVERSE) {
-      Serial.println("AXE_550_calibrate reverse");
-      Serial.println(secondaryTimeMillis % 500);
-      digitalWrite(13, secondaryTimeMillis % 500 > 250 ? HIGH : LOW);
-      if (secondaryTimeMillis > 10000) {
-        ESC.write(stopValue);
-      } else {
-        ESC.write(reverseValue);
-      }
+    Serial.println("AXE_550_calibrate reverse");
+    Serial.println(secondaryTimeMillis % 500);
+    digitalWrite(13, secondaryTimeMillis % 500 > 250 ? HIGH : LOW);
+    if (secondaryTimeMillis > 10000) {
+      ESC.write(stopValue);
+    } else {
+      ESC.write(reverseValue);
+    }
   } else if (motorState == OFF) {
-		digitalWrite(13, LOW);
-		ESC.write(stopValue);
-	}
+    digitalWrite(13, LOW);
+    ESC.write(stopValue);
+  }
 }
 
 void incrementHallEffectCount() {
