@@ -17,16 +17,22 @@ elapsedMillis timeMillis;
 elapsedMillis secondaryTimeMillis;
 elapsedMillis tempTimeMillis;
 
+const int escPin = 24;
+const int hallEffectSensorPin = 14;
+
 Servo ESC;     // create servo object to control the ESC
+
 const int OMD = 0;
 const int BALANCE = 1;
 const int AXE_550_CALIBRATE = 2;
-const int MODE = BALANCE;
-const int hallEffectSensorPin = 14;
-const int stopValue = 90;
+const int MODE = OMD;
+
+//const int stopValue = 90; // for Readytosk quadcopter ESC it's 0, for RC car ESCs it's 90
+const int stopValue = 0; // for Readytosk quadcopter ESC it's 0, for RC car ESCs it's 90
 const int reverseValue = 0;
-const int OMD_goValue = 132;
-const int BALANCE_goValue = 108; // is closer to a resonant frequency on the case
+const int OMD_accValue = stopValue + 36;
+const int OMD_goValue = stopValue + 50;
+const int BALANCE_goValue = stopValue + 36; // is closer to a resonant frequency on the case
 const int AXE_550_CALIBRATE_goValue = 180;
 const int goValue = MODE == OMD ? OMD_goValue : (
   MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
@@ -35,13 +41,14 @@ volatile int hallEffectCounter = 0;
 int revolutions = 0;
 int numGos = 0;
 const int SWITCH_DELAY = 250;
+const int ACC_DELAY = 1000;
 
 void setup() {
   Serial.begin(9600);
   temperatureSensors.setWaitForConversion(false);
 
   pinMode(hallEffectSensorPin, INPUT);
-  ESC.attach(24,1000,2000); // (pin, min pulse width, max pulse width in microseconds) 
+  ESC.attach(escPin, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
   delay(1000);
 
   timeMillis = 0;
@@ -51,8 +58,8 @@ void setup() {
 
 // we use two thresholds to ensure we have the right direction of change, and
 // they are far enough apart that noise in readings shouldn't mess up our logic
-const int HALL_THRESHOLD1 = 450;
-const int HALL_THRESHOLD2 = 550;
+const int HALL_THRESHOLD1 = 600;
+const int HALL_THRESHOLD2 = 800;
 bool reachedThreshold1 = false;
 bool reachedThreshold2 = false;
 bool goingUp = false;
@@ -62,9 +69,10 @@ bool goingUp = false;
 // 2 == stop state
 // 3 == reverse state
 const int INIT = 0;
-const int GO = 1;
-const int STOP = 2;
-const int REVERSE = 3;
+const int ACC = 1;
+const int GO = 2;
+const int STOP = 3;
+const int REVERSE = 4;
 int motorState = INIT;
 
 void loop() {
@@ -77,7 +85,11 @@ void loop() {
   if (motorState == INIT) {
     ESC.write(stopValue);
     //Serial.println("init");
-    if (secondaryTimeMillis > 3000 && (MODE == OMD || MODE == BALANCE)) {
+    if (secondaryTimeMillis > 4000 && MODE == OMD) {
+      //Serial.println("init done");
+      motorState = ACC;
+      secondaryTimeMillis = 0;
+    } else if (secondaryTimeMillis > 4000 && MODE == BALANCE) {
       //Serial.println("init done");
       motorState = GO;
       secondaryTimeMillis = 0;
@@ -91,6 +103,14 @@ void loop() {
         secondaryTimeMillis = 0;
       }
     }
+  } else if (motorState == ACC) {
+    // we accelerate for a longer time at first, to get over the initial friction
+    digitalWrite(13, HIGH);
+    ESC.write(OMD_accValue);
+    if (secondaryTimeMillis > ACC_DELAY && MODE == OMD) {
+      motorState = STOP;
+      secondaryTimeMillis = 0;
+    }
   } else if (motorState == GO) {
     digitalWrite(13, HIGH);
     ESC.write(goValue);
@@ -100,6 +120,13 @@ void loop() {
       secondaryTimeMillis = 0;
     } else if (MODE == BALANCE) {
       // do nothing: we just keep going in balance mode!
+      // XXX: temporarily limit it to 250ms
+      // if (secondaryTimeMillis > 10000) {
+      //   while (1) {
+      //     digitalWrite(13, LOW);
+      //     ESC.write(stopValue);
+      //   }
+      // }
     } else if (MODE == AXE_550_CALIBRATE) {
       // Serial.println("AXE_550_calibrate go");
       // Serial.println(secondaryTimeMillis % 1000);
@@ -154,7 +181,8 @@ void loop() {
   if (timeMillis > 50) {
     float frequency = (float) revolutions / ((float) timeMillis / 1000.0);
     float rpm = frequency * 60.0; 
-    //Serial.println(rpm);
+    //Serial.println(hallSensorValue);
+    Serial.println(rpm);
     //Serial.println((float) revolutions / ((float) timeMillis / 1000.0));
     revolutions = 0;
     timeMillis = 0;
