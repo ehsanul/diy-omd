@@ -20,6 +20,7 @@ DallasTemperature temperatureSensors(&oneWire);
 elapsedMillis timeMillis;
 elapsedMillis secondaryTimeMillis;
 elapsedMillis tempTimeMillis;
+elapsedMillis testMillis;
 
 Servo ESC;     // create servo object to control the ESC
 const int BALANCE = 100;
@@ -51,17 +52,10 @@ bool start_parse = false;
 const int MIN_SPEED = 100;
 const int MAX_SPEED = 130;
 
-/*StaticJsonDocument<200> kModeToCode;
-
-kModeToCode["BALANCE"] = "100";
-kModeToCode["OMD"] = "101";
-kModeToCode["AXE_550_CALIBRATE"] = "102";
-kModeToCode["OFF"] = "103";*/
-
-char json[] = "{\"BALANCE\":\"100\",\"OMD\":\"101\", \"CALIBRATE\":\"102\",\"OFF\": \"103\"}";
+char MODES[] = "{\"BALANCE\":\"100\",\"OMD\":\"101\", \"CALIBRATE\":\"102\",\"OFF\": \"103\"}";
 
 DynamicJsonDocument kModeToCode(1024);
-DeserializationError error = deserializeJson(kModeToCode, json);
+DeserializationError error = deserializeJson(kModeToCode, MODES);
 
 void setup() {
   Serial.begin(9600);
@@ -94,6 +88,7 @@ const int GO = 1;
 const int STOP = 2;
 const int REVERSE = 3;
 int motorState = INIT;
+int test = 0;
 
 void loop() {
   if (tempTimeMillis > 60000) {
@@ -106,6 +101,20 @@ void loop() {
   operateMotor();
   processHallSensor();
   logRPM();
+
+	if (testMillis > 500) {
+		test++;
+		transmitBTData("temp", (String)test);
+		testMillis = 0;
+	}
+}
+
+void transmitBTData(String key, String value) {
+	char str[50];
+	sprintf(str, "{\"%s\":\"%s\"}", key, value);
+
+	btSerial.write(str);
+	memset(str, 0, 50);
 }
 
 void logRPM() {
@@ -188,9 +197,9 @@ void go() {
 void processMode(const char* modeString) {
   int mode = atoi(kModeToCode[modeString]);
 
+	Serial.println("Switching mode to");
   switch (mode) {
     case OMD: {
-			Serial.println("Switching mode to");
 			Serial.println("OMD");
 			MODE = OMD;
 			secondaryTimeMillis = 0;
@@ -198,21 +207,18 @@ void processMode(const char* modeString) {
     }
 
     case BALANCE: {
-			Serial.println("Switching mode to");
 			Serial.println("BALANCE");
 			MODE = BALANCE;
       break;
     }
 
     case AXE_550_CALIBRATE: {
-			Serial.println("Switching mode to");
 			Serial.println("CALIBRATE");
 			MODE = AXE_550_CALIBRATE;
       break;
     }
 
     case OFF: {
-			Serial.println("Switching mode to");
 			Serial.println("OFF");
 			MODE = OFF;
       break;
