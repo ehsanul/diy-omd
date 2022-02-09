@@ -27,12 +27,15 @@ const int BALANCE = 1;
 const int AXE_550_CALIBRATE = 2;
 const int MODE = OMD;
 
-//const int stopValue = 90; // for Readytosk quadcopter ESC it's 0, for RC car ESCs it's 90
-const int stopValue = 0; // for Readytosk quadcopter ESC it's 0, for RC car ESCs it's 90
-const int reverseValue = 0;
-const int OMD_accValue = stopValue + 36;
-const int OMD_goValue = stopValue + 50;
-const int BALANCE_goValue = stopValue + 36; // is closer to a resonant frequency on the case
+const int RC = 0; // rc cars
+const int QUAD = 1; // quadcopters
+const int escType = RC;
+
+const int stopValue = escType == RC ? 90 : 0; // quadcopters don't go in reverse!
+const int reverseValue = 0; // only valid for RC!
+const int OMD_accValue = escType == RC ? 115 : 36;
+const int OMD_goValue = escType == RC ? 123 : 50;
+const int BALANCE_goValue = escType == RC ? 108 : 36; // go slower while we balance!
 const int AXE_550_CALIBRATE_goValue = 180;
 const int goValue = MODE == OMD ? OMD_goValue : (
   MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
