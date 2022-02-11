@@ -297,7 +297,7 @@ void processCmd() {
     Serial.println("On sequence: ");
     Serial.println(onSequenceMilli);
     onSequence = onSequenceMilli;
-		secondaryTimeMillis = 0;
+    secondaryTimeMillis = 0;
     return;
   }
 
