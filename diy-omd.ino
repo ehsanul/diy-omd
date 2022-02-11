@@ -232,6 +232,10 @@ void processMode(const char* modeString) {
       break;
     }
   }
+
+  goValue = MODE == OMD ? OMD_goValue : (
+    MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
+  );
 }
 
 void processIncomingBTData() {
