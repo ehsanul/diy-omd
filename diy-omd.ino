@@ -57,6 +57,7 @@ const char PARSE_START = '<';
 bool start_parse = false;
 const int MIN_SPEED = 100;
 const int MAX_SPEED = 130;
+const int MAX_GO_VALUE = 140;
 
 char MODES[] = "{\"BALANCE\":\"100\",\"OMD\":\"101\", \"CALIBRATE\":\"102\",\"OFF\": \"103\"}";
 
@@ -233,9 +234,15 @@ void processMode(const char* modeString) {
     }
   }
 
-  goValue = MODE == OMD ? OMD_goValue : (
+  int tempGoValue = MODE == OMD ? OMD_goValue : (
     MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
   );
+
+  if (tempGoValue <= MAX_GO_VALUE) {
+    goValue = MODE == OMD ? OMD_goValue : (
+      MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
+    );
+  }
 }
 
 void processIncomingBTData() {
