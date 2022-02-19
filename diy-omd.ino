@@ -20,9 +20,10 @@ DallasTemperature temperatureSensors(&oneWire);
 elapsedMillis timeMillis;
 elapsedMillis secondaryTimeMillis;
 elapsedMillis tempTimeMillis;
-elapsedMillis testMillis;
+elapsedMillis bluetoothMillis;
 
 const int escPin = 24;
+const int hallEffectSensorPin = 14;
 
 Servo ESC;     // create servo object to control the ESC
 const int BALANCE = 100;
@@ -30,7 +31,6 @@ const int OMD = 101;
 const int AXE_550_CALIBRATE = 102;
 const int OFF = 103;
 int MODE = OMD;
-const int hallEffectSensorPin = 14;
 const int RC = 0; // rc cars
 const int QUAD = 1; // quadcopters
 const int escType = RC;
@@ -51,13 +51,9 @@ int offSequence = 250;
 
 SoftwareSerial btSerial(7,8); // RX, TX (from pinout, not BL)
 String inData;
-bool start = false;
 const char PARSE_END = '>';
 const char PARSE_START = '<';
-bool start_parse = false;
-const int MIN_SPEED = 100;
-const int MAX_SPEED = 130;
-const int MAX_GO_VALUE = 140;
+const int MAX_GO_VALUE = escType == RC ? 130 : 60;
 
 char MODES[] = "{\"BALANCE\":\"100\",\"OMD\":\"101\", \"CALIBRATE\":\"102\",\"OFF\": \"103\"}";
 
@@ -77,6 +73,7 @@ void setup() {
   timeMillis = 0;
   secondaryTimeMillis = 0;
   tempTimeMillis = 0;
+
 }
 
 // we use two thresholds to ensure we have the right direction of change, and
@@ -97,7 +94,6 @@ const int GO = 2;
 const int STOP = 3;
 const int REVERSE = 4;
 int motorState = INIT;
-int test = 0;
 
 void loop() {
   if (tempTimeMillis > 60000) {
@@ -110,11 +106,13 @@ void loop() {
   operateMotor();
   processHallSensor();
   logRPM();
+  transmitRealtimeData();
+}
 
-  if (testMillis > 500) {
-    test++;
-    transmitBTData("temp", (String)test);
-    testMillis = 0;
+void transmitRealtimeData() {
+  if (bluetoothMillis > 500) {
+    //transmitBTData("temp", (String)test);
+    bluetoothMillis = 0;
   }
 }
 
@@ -166,7 +164,11 @@ void processHallSensor() {
 void init() {
   ESC.write(stopValue);
   //Serial.println("init");
-  if (secondaryTimeMillis > 3000 && (MODE == OMD || MODE == BALANCE)) {
+  if (secondaryTimeMillis > 4000 && MODE == OMD) {
+    //Serial.println("init done");
+    motorState = ACC;
+    secondaryTimeMillis = 0;
+  } else if (secondaryTimeMillis > 4000 && MODE == BALANCE) {
     //Serial.println("init done");
     motorState = GO;
     secondaryTimeMillis = 0;
@@ -191,6 +193,13 @@ void go() {
     secondaryTimeMillis = 0;
   } else if (MODE == BALANCE) {
     // do nothing: we just keep going in balance mode!
+    // XXX: temporarily limit it to 250ms
+    // if (secondaryTimeMillis > 10000) {
+    //   while (1) {
+    //     digitalWrite(13, LOW);
+    //     ESC.write(stopValue);
+    //   }
+    // }
   } else if (MODE == AXE_550_CALIBRATE) {
     // Serial.println("AXE_550_calibrate go");
     // Serial.println(secondaryTimeMillis % 1000);
@@ -232,6 +241,12 @@ void processMode(const char* modeString) {
       MODE = OFF;
       break;
     }
+
+    default: {
+      Serial.println("Unknown cmd");
+      MODE = OFF;
+      break;
+    }
   }
 
   int tempGoValue = MODE == OMD ? OMD_goValue : (
@@ -247,27 +262,28 @@ void processMode(const char* modeString) {
 
 void processIncomingBTData() {
   char appData;
+  bool parsingStarted = false;
 
   if (btSerial.available() > 0) {
     appData = btSerial.read();
 
-    if (appData == PARSE_START || start == true) {
+    if (appData == PARSE_START || parsingStarted == true) {
       inData += appData;  // save the data in string format
-      start = true;
+      parsingStarted = true;
     }
     //Serial.println(appData);
   }
 
   if (appData == PARSE_END) {
-    start = false;
+    parsingStarted = false;
     processJSON();
   }
 }
 
 void processJSON() {
   Serial.println("Processing JSON...");
-  inData.replace(">", "");
-  inData.replace("<", "");
+  inData.replace(PARSE_START, "");
+  inData.replace(PARSE_END, "");
   Serial.println("Parsing the follow: ");
   Serial.println(inData);
 
@@ -291,36 +307,31 @@ void processCmd() {
   const char* modeString = doc["mode"];
   const char* on = doc["on"];
   const char* off = doc["off"];
-  const char* speed = doc["hz"];
+  const char* escSpeed = doc["escSpeed"];
 
   if (modeString) {
     processMode(modeString);
-    return;
   }
 
   if (on) {
     // TODO: Change value for on sequence
-    int onSequenceMilli = atoi(on);
+    onSequence = atoi(on);
     Serial.println("On sequence: ");
-    Serial.println(onSequenceMilli);
-    onSequence = onSequenceMilli;
+    Serial.println(onSequence);
     secondaryTimeMillis = 0;
-    return;
   }
 
   if (off) {
     // TODO: Change value for off sequence
-    int offSequenceMilli = atoi(off);
+    offSequence = atoi(off);
     Serial.println("Off sequence: ");
-    Serial.println(offSequenceMilli);
-    offSequence = offSequenceMilli;
+    Serial.println(offSequence);
     secondaryTimeMillis = 0;
-    return;
   }
 
-  if (speed) {
+  if (escSpeed) {
     // TODO: Change value for off sequence
-    int speedValue = atoi(speed);
+    int speedValue = atoi(escSpeed);
     Serial.println("Speed value: ");
     Serial.println(speedValue);
     switch (MODE) {
@@ -339,84 +350,62 @@ void processCmd() {
 	break;
       }
     }
-    return;
+
+    int tempGoValue = MODE == OMD ? OMD_goValue : (
+      MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
+    );
+
+    if (tempGoValue <= MAX_GO_VALUE) {
+      goValue = MODE == OMD ? OMD_goValue : (
+	MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
+      );
+    }
+  }
+}
+
+void accelerate() {
+  // we accelerate for a longer time at first, to get over the initial friction
+  digitalWrite(13, HIGH);
+  ESC.write(OMD_accValue);
+  if (secondaryTimeMillis > ACC_DELAY && MODE == OMD) {
+    motorState = STOP;
+    secondaryTimeMillis = 0;
+  }
+}
+
+void stop() {
+  digitalWrite(13, LOW);
+  // stop
+  ESC.write(stopValue);
+  if (secondaryTimeMillis > offSequence && numGos < 7200) {
+    numGos++;
+    motorState = GO;
+    secondaryTimeMillis = 0;
+  }
+}
+
+void axe_550_reverse() {
+  Serial.println("AXE_550_calibrate reverse");
+  Serial.println(secondaryTimeMillis % 500);
+  digitalWrite(13, secondaryTimeMillis % 500 > 250 ? HIGH : LOW);
+  if (secondaryTimeMillis > 10000) {
+    ESC.write(stopValue);
+  } else {
+    ESC.write(reverseValue);
   }
 }
 
 void operateMotor() {
   if (motorState == INIT) {
-    ESC.write(stopValue);
-    //Serial.println("init");
-    if (secondaryTimeMillis > 4000 && MODE == OMD) {
-      //Serial.println("init done");
-      motorState = ACC;
-      secondaryTimeMillis = 0;
-    } else if (secondaryTimeMillis > 4000 && MODE == BALANCE) {
-      //Serial.println("init done");
-      motorState = GO;
-      secondaryTimeMillis = 0;
-    } else if (MODE == AXE_550_CALIBRATE) {
-      // Serial.println("AXE_550_calibrate init");
-      // Serial.println(secondaryTimeMillis);
-      digitalWrite(13, secondaryTimeMillis % 2000 > 1000 ? HIGH : LOW);
-
-      if (secondaryTimeMillis > 10000) {
-        motorState = GO;
-        secondaryTimeMillis = 0;
-      }
-    }
+    init();
   } else if (motorState == ACC) {
-    // we accelerate for a longer time at first, to get over the initial friction
-    digitalWrite(13, HIGH);
-    ESC.write(OMD_accValue);
-    if (secondaryTimeMillis > ACC_DELAY && MODE == OMD) {
-      motorState = STOP;
-      secondaryTimeMillis = 0;
-    }
+    accelerate();
   } else if (motorState == GO) {
-    digitalWrite(13, HIGH);
-    ESC.write(goValue);
-    if (secondaryTimeMillis > onSequence && MODE == OMD) {
-      //Serial.println("go done");
-      motorState = STOP;
-      secondaryTimeMillis = 0;
-    } else if (MODE == BALANCE) {
-      // do nothing: we just keep going in balance mode!
-      // XXX: temporarily limit it to 250ms
-      // if (secondaryTimeMillis > 10000) {
-      //   while (1) {
-      //     digitalWrite(13, LOW);
-      //     ESC.write(stopValue);
-      //   }
-      // }
-    } else if (MODE == AXE_550_CALIBRATE) {
-      // Serial.println("AXE_550_calibrate go");
-      // Serial.println(secondaryTimeMillis % 1000);
-      digitalWrite(13, secondaryTimeMillis % 1000 > 500 ? HIGH : LOW);
-
-      if (secondaryTimeMillis > 10000) {
-        motorState = REVERSE;
-        secondaryTimeMillis = 0;
-      }
-    }
+    go();
   } else if (motorState == STOP) {
-    digitalWrite(13, LOW);
-    // stop
-    ESC.write(stopValue);
-    if (secondaryTimeMillis > onSequence && numGos < 7200) {
-      numGos++;
-      motorState = GO;
-      secondaryTimeMillis = 0;
-    }
+    stop();
   } else if (motorState == REVERSE) {
-      Serial.println("AXE_550_calibrate reverse");
-      Serial.println(secondaryTimeMillis % 500);
-      digitalWrite(13, secondaryTimeMillis % 500 > 250 ? HIGH : LOW);
-      if (secondaryTimeMillis > 10000) {
-        ESC.write(stopValue);
-      } else {
-        ESC.write(reverseValue);
-      }
+    axe_550_reverse();
   } else if (motorState == OFF) {
     digitalWrite(13, LOW);
     ESC.write(stopValue);
