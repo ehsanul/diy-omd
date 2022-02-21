@@ -22,10 +22,14 @@ elapsedMillis secondaryTimeMillis;
 elapsedMillis tempTimeMillis;
 elapsedMillis bluetoothMillis;
 
-const int escPin = 24;
+const int escPin1 = 24;
+const int escPin2 = 11;
+const int escPin3 = 6;
 const int hallEffectSensorPin = 14;
 
-Servo ESC;     // create servo object to control the ESC
+Servo ESC1;     // create servo object to control the ESC
+Servo ESC2;     // create servo object to control the ESC
+Servo ESC3;     // create servo object to control the ESC
 const int BALANCE = 100;
 const int OMD = 101;
 const int AXE_550_CALIBRATE = 102;
@@ -33,11 +37,11 @@ const int OFF = 103;
 int MODE = OMD;
 const int RC = 0; // rc cars
 const int QUAD = 1; // quadcopters
-const int escType = RC;
+const int escType = QUAD;
 const int stopValue = escType == RC ? 90 : 0; // quadcopters don't go in reverse!
 const int reverseValue = 0; // only valid for RC!
 const int OMD_accValue = escType == RC ? 115 : 36;
-int OMD_goValue = escType == RC ? 123 : 50;
+int OMD_goValue = escType == RC ? 135 : 50;
 int BALANCE_goValue = escType == RC ? 108 : 36; // go slower while we balance!
 int AXE_550_CALIBRATE_goValue = 180;
 int goValue = MODE == OMD ? OMD_goValue : (
@@ -67,7 +71,9 @@ void setup() {
   temperatureSensors.setWaitForConversion(false);
 
   pinMode(hallEffectSensorPin, INPUT);
-  ESC.attach(escPin, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
+  ESC1.attach(escPin1, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
+  ESC2.attach(escPin2, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
+  ESC3.attach(escPin3, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
   delay(1000);
 
   timeMillis = 0;
@@ -162,7 +168,9 @@ void processHallSensor() {
 }
 
 void init() {
-  ESC.write(stopValue);
+  ESC1.write(stopValue);
+  ESC2.write(stopValue);
+  ESC3.write(stopValue);
   //Serial.println("init");
   if (secondaryTimeMillis > 4000 && MODE == OMD) {
     //Serial.println("init done");
@@ -186,7 +194,9 @@ void init() {
 
 void go() {
   digitalWrite(13, HIGH);
-  ESC.write(goValue);
+  ESC1.write(goValue);
+  ESC2.write(goValue);
+  ESC3.write(goValue);
   if (secondaryTimeMillis > onSequence && MODE == OMD) {
     //Serial.println("go done");
     motorState = STOP;
@@ -366,7 +376,9 @@ void processCmd() {
 void accelerate() {
   // we accelerate for a longer time at first, to get over the initial friction
   digitalWrite(13, HIGH);
-  ESC.write(OMD_accValue);
+  ESC1.write(OMD_accValue);
+  ESC2.write(OMD_accValue);
+  ESC3.write(OMD_accValue);
   if (secondaryTimeMillis > ACC_DELAY && MODE == OMD) {
     motorState = STOP;
     secondaryTimeMillis = 0;
@@ -376,7 +388,9 @@ void accelerate() {
 void stop() {
   digitalWrite(13, LOW);
   // stop
-  ESC.write(stopValue);
+  ESC1.write(stopValue);
+  ESC2.write(stopValue);
+  ESC3.write(stopValue);
   if (secondaryTimeMillis > offSequence && numGos < 7200) {
     numGos++;
     motorState = GO;
@@ -389,9 +403,13 @@ void axe_550_reverse() {
   Serial.println(secondaryTimeMillis % 500);
   digitalWrite(13, secondaryTimeMillis % 500 > 250 ? HIGH : LOW);
   if (secondaryTimeMillis > 10000) {
-    ESC.write(stopValue);
+    ESC1.write(stopValue);
+    ESC2.write(stopValue);
+    ESC3.write(stopValue);
   } else {
-    ESC.write(reverseValue);
+    ESC1.write(reverseValue);
+    ESC2.write(reverseValue);
+    ESC3.write(reverseValue);
   }
 }
 
@@ -408,7 +426,9 @@ void operateMotor() {
     axe_550_reverse();
   } else if (motorState == OFF) {
     digitalWrite(13, LOW);
-    ESC.write(stopValue);
+    ESC1.write(stopValue);
+    ESC2.write(stopValue);
+    ESC3.write(stopValue);
   }
 }
 
