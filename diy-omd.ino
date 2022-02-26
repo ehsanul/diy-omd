@@ -22,9 +22,9 @@ elapsedMillis secondaryTimeMillis;
 elapsedMillis tempTimeMillis;
 elapsedMillis bluetoothMillis;
 
-const int escPin1 = 24;
+const int escPin1 = 6;
 const int escPin2 = 11;
-const int escPin3 = 6;
+const int escPin3 = 24;
 const int hallEffectSensorPin = 14;
 
 Servo ESC1;     // create servo object to control the ESC
@@ -35,16 +35,33 @@ const int OMD = 101;
 const int AXE_550_CALIBRATE = 102;
 const int OFF = 103;
 int MODE = OMD;
+
 const int RC = 0; // rc cars
 const int QUAD = 1; // quadcopters
 const int escType = QUAD;
+
 const int stopValue = escType == RC ? 90 : 0; // quadcopters don't go in reverse!
 const int reverseValue = 0; // only valid for RC!
-const int OMD_accValue = escType == RC ? 115 : 36;
-int OMD_goValue = escType == RC ? 135 : 50;
-int BALANCE_goValue = escType == RC ? 108 : 36; // go slower while we balance!
+const int OMD_accValue = escType == RC ? 115 : 25;
+
+// for quad esc, starting the esc with throttle at max is how to calibrate the
+// max throttle value. otherwise, this seems to be random, causing strange
+// speed fluctuations on later runs
+const int calibrationInitValue = 180;
+
+int OMD_goValue1 = escType == RC ? 135 : 57;
+int OMD_goValue2 = escType == RC ? 135 : 48;
+int OMD_goValue3 = escType == RC ? 135 : 51;
+
+int BALANCE_goValue = escType == RC ? 108 : 20; // go slower while we balance!
 int AXE_550_CALIBRATE_goValue = 180;
-int goValue = MODE == OMD ? OMD_goValue : (
+int goValue1 = MODE == OMD ? OMD_goValue1 : (
+  MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
+);
+int goValue2 = MODE == OMD ? OMD_goValue2 : (
+  MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
+);
+int goValue3 = MODE == OMD ? OMD_goValue3 : (
   MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
 );
 volatile int hallEffectCounter = 0;
@@ -90,22 +107,19 @@ bool reachedThreshold1 = false;
 bool reachedThreshold2 = false;
 bool goingUp = false;
 
-// 0 == init state
-// 1 == go state
-// 2 == stop state
-// 3 == reverse state
-const int INIT = 0;
-const int ACC = 1;
-const int GO = 2;
-const int STOP = 3;
-const int REVERSE = 4;
-int motorState = INIT;
+const int CALIBRATION_INIT = 0;
+const int INIT = 1;
+const int ACC = 2;
+const int GO = 3;
+const int STOP = 4;
+const int REVERSE = 5;
+int motorState = CALIBRATION_INIT;
 
 void loop() {
   if (tempTimeMillis > 60000) {
     tempTimeMillis = 0;
     temperatureSensors.requestTemperatures();
-    Serial.println("Temp C @ Index 0: " + String(temperatureSensors.getTempCByIndex(0))); // Get the first temperature.
+    // Serial.println("Temp C @ Index 0: " + String(temperatureSensors.getTempCByIndex(0))); // Get the first temperature.
   }
 
   processIncomingBTData();
@@ -134,7 +148,7 @@ void logRPM() {
   if (timeMillis > 50) {
     float frequency = (float) revolutions / ((float) timeMillis / 1000.0);
     float rpm = frequency * 60.0;
-    //Serial.println(rpm);
+    Serial.println(rpm);
     //Serial.println((float) revolutions / ((float) timeMillis / 1000.0));
     revolutions = 0;
     timeMillis = 0;
@@ -167,6 +181,20 @@ void processHallSensor() {
   }
 }
 
+void calibrationInit() {
+  if (escType == QUAD) {
+    ESC1.write(calibrationInitValue);
+    ESC2.write(calibrationInitValue);
+    ESC3.write(calibrationInitValue);
+    if (secondaryTimeMillis > 2000) {
+      secondaryTimeMillis = 0;
+      motorState = INIT;
+    }
+  } else {
+    motorState = INIT;
+  }
+}
+
 void init() {
   ESC1.write(stopValue);
   ESC2.write(stopValue);
@@ -194,9 +222,9 @@ void init() {
 
 void go() {
   digitalWrite(13, HIGH);
-  ESC1.write(goValue);
-  ESC2.write(goValue);
-  ESC3.write(goValue);
+  ESC1.write(goValue1);
+  ESC2.write(goValue2);
+  ESC3.write(goValue3);
   if (secondaryTimeMillis > onSequence && MODE == OMD) {
     //Serial.println("go done");
     motorState = STOP;
@@ -259,12 +287,12 @@ void processMode(const char* modeString) {
     }
   }
 
-  int tempGoValue = MODE == OMD ? OMD_goValue : (
+  int tempGoValue = MODE == OMD ? OMD_goValue1 : (
     MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
   );
 
   if (tempGoValue <= MAX_GO_VALUE) {
-    goValue = MODE == OMD ? OMD_goValue : (
+    goValue1 = MODE == OMD ? OMD_goValue1 : (
       MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
     );
   }
@@ -346,7 +374,7 @@ void processCmd() {
     Serial.println(speedValue);
     switch (MODE) {
       case OMD: {
-	OMD_goValue = speedValue;
+	OMD_goValue1 = speedValue;
 	break;
       }
 
@@ -361,12 +389,12 @@ void processCmd() {
       }
     }
 
-    int tempGoValue = MODE == OMD ? OMD_goValue : (
+    int tempGoValue = MODE == OMD ? OMD_goValue1 : (
       MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
     );
 
     if (tempGoValue <= MAX_GO_VALUE) {
-      goValue = MODE == OMD ? OMD_goValue : (
+      goValue1 = MODE == OMD ? OMD_goValue1 : (
 	MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
       );
     }
@@ -414,7 +442,9 @@ void axe_550_reverse() {
 }
 
 void operateMotor() {
-  if (motorState == INIT) {
+  if (motorState == CALIBRATION_INIT) {
+    calibrationInit();
+  } else if (motorState == INIT) {
     init();
   } else if (motorState == ACC) {
     accelerate();
