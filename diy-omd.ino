@@ -4,6 +4,7 @@
 #include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <EEPROM.h>
 
 StaticJsonDocument<200> doc;
 
@@ -21,6 +22,9 @@ elapsedMillis timeMillis;
 elapsedMillis secondaryTimeMillis;
 elapsedMillis tempTimeMillis;
 elapsedMillis bluetoothMillis;
+elapsedMillis spinCycleMillis;
+
+const int WINDOW_FOR_PEAK_FREQUENCY = 500;
 
 const int escPin1 = 6;
 const int escPin2 = 11;
@@ -35,6 +39,13 @@ const int OMD = 101;
 const int AXE_550_CALIBRATE = 102;
 const int OFF = 103;
 int MODE = OMD;
+float minFrequencyInWindow = 9999999.0;
+float maxFrequencyInWindow = -999999.0;
+
+bool parsingStarted = false;
+
+// Operations
+const int OP_INIT = 100;
 
 const int RC = 0; // rc cars
 const int QUAD = 1; // quadcopters
@@ -42,16 +53,29 @@ const int escType = QUAD;
 
 const int stopValue = escType == RC ? 90 : 0; // quadcopters don't go in reverse!
 const int reverseValue = 0; // only valid for RC!
-const int OMD_accValue = escType == RC ? 115 : 25;
+const int OMD_accValue = escType == RC ? 115 : 20;
 
 // for quad esc, starting the esc with throttle at max is how to calibrate the
 // max throttle value. otherwise, this seems to be random, causing strange
 // speed fluctuations on later runs
 const int calibrationInitValue = 180;
 
-int OMD_goValue1 = escType == RC ? 135 : 57;
+int OMD_GOVALUE1_ADDR = 1;
+int OMD_GOVALUE2_ADDR = 2;
+int OMD_GOVALUE3_ADDR = 3;
+int MOTOR_STATE_ADDR  = 4;
+int BALANCE_GOVALUE_ADDR = 5;
+int MODE_ADDR = 6;
+int ON_SEQUENCE_ADDR = 8;
+int OFF_SEQUENCE_ADDR = 12;
+
+/*int OMD_goValue1 = escType == RC ? 135 : 57;
 int OMD_goValue2 = escType == RC ? 135 : 48;
-int OMD_goValue3 = escType == RC ? 135 : 51;
+int OMD_goValue3 = escType == RC ? 135 : 51;*/
+int OMD_goValue1 = escType == RC ? 135 : 27;
+int OMD_goValue2 = escType == RC ? 135 : 23;
+int OMD_goValue3 = escType == RC ? 135 : 23;
+
 
 int BALANCE_goValue = escType == RC ? 108 : 20; // go slower while we balance!
 int AXE_550_CALIBRATE_goValue = 180;
@@ -77,15 +101,19 @@ const char PARSE_START = '<';
 const int MAX_GO_VALUE = escType == RC ? 130 : 60;
 
 char MODES[] = "{\"BALANCE\":\"100\",\"OMD\":\"101\", \"CALIBRATE\":\"102\",\"OFF\": \"103\"}";
+char OPERATIONS[] = "{\"INIT\":\"100\"}";
 
 DynamicJsonDocument kModeToCode(1024);
-DeserializationError error = deserializeJson(kModeToCode, MODES);
+DynamicJsonDocument kOperationToCode(1024);
+DeserializationError error1 = deserializeJson(kModeToCode, MODES);
+DeserializationError error2 = deserializeJson(kOperationToCode, OPERATIONS);
 const int ACC_DELAY = 1000;
 
 void setup() {
   Serial.begin(9600);
   btSerial.begin(9600);
   temperatureSensors.setWaitForConversion(false);
+  initGoValues();
 
   pinMode(hallEffectSensorPin, INPUT);
   ESC1.attach(escPin1, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
@@ -125,30 +153,56 @@ void loop() {
   processIncomingBTData();
   operateMotor();
   processHallSensor();
-  logRPM();
+  //logRPM();
   transmitRealtimeData();
 }
 
+int test = 0;
 void transmitRealtimeData() {
   if (bluetoothMillis > 500) {
-    //transmitBTData("temp", (String)test);
+    test++;
+    String tmp = String("{\"temp\":") + "\"" + String(test) + "\"}";
+    //transmitBTData(tmp);
     bluetoothMillis = 0;
   }
 }
 
-void transmitBTData(String key, String value) {
-  char str[50];
-  sprintf(str, "{\"%s\":\"%s\"}", key, value);
+void transmitBTData(String json) {
+  /*char str[50];
+  sprintf(str, "{\"%s\":\"%s\"}", key, value);*/
 
-  btSerial.write(str);
-  memset(str, 0, 50);
+  const char* j = json.c_str();
+
+  btSerial.write(j);
+  //memset(str, 0, 50);
 }
 
 void logRPM() {
   if (timeMillis > 50) {
     float frequency = (float) revolutions / ((float) timeMillis / 1000.0);
     float rpm = frequency * 60.0;
-    Serial.println(rpm);
+
+    if (rpm < minFrequencyInWindow) {
+      minFrequencyInWindow = rpm;
+    }
+
+    if (rpm > maxFrequencyInWindow) {
+      maxFrequencyInWindow = rpm;
+    }
+
+    if (spinCycleMillis > WINDOW_FOR_PEAK_FREQUENCY) {
+      spinCycleMillis = 0;
+      maxFrequencyInWindow = -9999;
+      minFrequencyInWindow = 9999;
+
+      String speed = String("{\"min\":") + "\"" + String(minFrequencyInWindow) + "\"}";
+      transmitBTData(speed);
+      delay(50);
+      speed = String("{\"max\":") + "\"" + String(maxFrequencyInWindow) + "\"}";
+      transmitBTData(speed);
+    }
+
+    //Serial.println(rpm);
     //Serial.println((float) revolutions / ((float) timeMillis / 1000.0));
     revolutions = 0;
     timeMillis = 0;
@@ -179,6 +233,35 @@ void processHallSensor() {
       goingUp = true;
     }
   }
+}
+
+void initGoValues() {
+  int omdGoValue1StoredValue = EEPROM.read(OMD_GOVALUE1_ADDR);
+  int omdGoValue2StoredValue = EEPROM.read(OMD_GOVALUE2_ADDR);
+  int omdGoValue3StoredValue = EEPROM.read(OMD_GOVALUE3_ADDR);
+  int balanceGoValueStoredValue = EEPROM.read(BALANCE_GOVALUE_ADDR);
+  int modeStoredValue = EEPROM.read(MODE_ADDR);
+
+  if (modeStoredValue == BALANCE) {
+    BALANCE_goValue = balanceGoValueStoredValue == 255 ? BALANCE_goValue : balanceGoValueStoredValue;
+    goValue1 = BALANCE_goValue;
+    goValue2 = BALANCE_goValue;
+    goValue3 = BALANCE_goValue;
+  } else {
+    goValue1 = omdGoValue1StoredValue == 255 ? OMD_goValue1 :  omdGoValue1StoredValue;
+    goValue2 = omdGoValue2StoredValue == 255 ? OMD_goValue2 :  omdGoValue2StoredValue;
+    goValue3 = omdGoValue3StoredValue == 255 ? OMD_goValue3 :  omdGoValue3StoredValue;
+  }
+
+  Serial.println("goValue_1:");
+  Serial.println(goValue1);
+  Serial.println("goValue_2:");
+  Serial.println(goValue2);
+  Serial.println("goValue_3:");
+  Serial.println(goValue3);
+
+  Serial.println("Balance value:");
+  Serial.println(BALANCE_goValue);
 }
 
 void calibrationInit() {
@@ -258,6 +341,7 @@ void processMode(const char* modeString) {
     case OMD: {
       Serial.println("OMD");
       MODE = OMD;
+      EEPROM.write(MODE_ADDR, OMD);
       secondaryTimeMillis = 0;
       break;
     }
@@ -265,57 +349,58 @@ void processMode(const char* modeString) {
     case BALANCE: {
       Serial.println("BALANCE");
       MODE = BALANCE;
+      EEPROM.write(MODE_ADDR, BALANCE);
       break;
     }
 
     case AXE_550_CALIBRATE: {
       Serial.println("CALIBRATE");
       MODE = AXE_550_CALIBRATE;
+      EEPROM.write(MODE_ADDR, AXE_550_CALIBRATE);
       break;
     }
 
     case OFF: {
       Serial.println("OFF");
       MODE = OFF;
+      EEPROM.write(MODE_ADDR, OFF);
       break;
     }
 
     default: {
       Serial.println("Unknown cmd");
       MODE = OFF;
+      EEPROM.write(MODE_ADDR, OFF);
       break;
     }
   }
 
-  int tempGoValue = MODE == OMD ? OMD_goValue1 : (
-    MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
-  );
-
-  if (tempGoValue <= MAX_GO_VALUE) {
-    goValue1 = MODE == OMD ? OMD_goValue1 : (
-      MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
-    );
-  }
+  initGoValues();
 }
 
 void processIncomingBTData() {
   char appData;
-  bool parsingStarted = false;
 
   if (btSerial.available() > 0) {
     appData = btSerial.read();
+    Serial.println(appData);
 
-    if (appData == PARSE_START || parsingStarted == true) {
+    if (appData == '<') {
+      Serial.println("Parsing started..");
+    }
+
+    if (appData == '<' || parsingStarted == true) {
       inData += appData;  // save the data in string format
       parsingStarted = true;
     }
     //Serial.println(appData);
+    if (appData == '>') {
+      Serial.println("Parsing end");
+      parsingStarted = false;
+      processJSON();
+    }
   }
 
-  if (appData == PARSE_END) {
-    parsingStarted = false;
-    processJSON();
-  }
 }
 
 void processJSON() {
@@ -341,11 +426,76 @@ void processJSON() {
   processCmd();
 }
 
+void processOperation(const char* operation) {
+  int op = atoi(kOperationToCode[operation]);
+  Serial.println("Received operation:");
+  Serial.println(op);
+  Serial.println(operation);
+
+  switch (op) {
+    case OP_INIT: {
+      Serial.println("Sending saved parameters to bluetooth device.");
+      int omdGoValue1StoredValue = EEPROM.read(OMD_GOVALUE1_ADDR);
+      int omdGoValue2StoredValue = EEPROM.read(OMD_GOVALUE2_ADDR);
+      int omdGoValue3StoredValue = EEPROM.read(OMD_GOVALUE3_ADDR);
+      int balanceGoValueStoredValue = EEPROM.read(BALANCE_GOVALUE_ADDR);
+      int modeStoredValue = EEPROM.read(MODE_ADDR);
+      int onSequenceStoredValue = EEPROM.read(ON_SEQUENCE_ADDR);
+      int offSequenceStoredValue = EEPROM.read(OFF_SEQUENCE_ADDR);
+
+      omdGoValue1StoredValue = omdGoValue1StoredValue == 255 ? OMD_goValue1 :  omdGoValue1StoredValue;
+      omdGoValue2StoredValue = omdGoValue2StoredValue == 255 ? OMD_goValue2 :  omdGoValue2StoredValue;
+      omdGoValue3StoredValue = omdGoValue3StoredValue == 255 ? OMD_goValue3 :  omdGoValue3StoredValue;
+      balanceGoValueStoredValue = balanceGoValueStoredValue == 255 ? BALANCE_goValue : balanceGoValueStoredValue;
+      modeStoredValue = modeStoredValue == 255 ? MODE : modeStoredValue;
+      onSequenceStoredValue = onSequenceStoredValue == 255 ? onSequence : onSequenceStoredValue;
+      offSequenceStoredValue = offSequenceStoredValue == 255 ? offSequence : offSequenceStoredValue;
+
+      String tmp = String("{\"esc1\":") + "\"" + String(omdGoValue1StoredValue) + "\"}";
+      transmitBTData(tmp);
+      delay(50);
+      tmp = String("{\"esc2\":") + "\"" + String(omdGoValue2StoredValue) + "\"}";
+      transmitBTData(tmp);
+      delay(50);
+      tmp = String("{\"esc3\":") + "\"" + String(omdGoValue3StoredValue) + "\"}";
+      transmitBTData(tmp);
+      delay(50);
+      tmp = String("{\"balance\":") + "\"" + String(balanceGoValueStoredValue) + "\"}";
+      transmitBTData(tmp);
+      delay(50);
+      tmp = String("{\"mode\":") + "\"" + String(modeStoredValue) + "\"}";
+      transmitBTData(tmp);
+      delay(50);
+      tmp = String("{\"on\":") + "\"" + String(onSequenceStoredValue) + "\"}";
+      transmitBTData(tmp);
+      delay(50);
+      tmp = String("{\"off\":") + "\"" + String(offSequenceStoredValue) + "\"}";
+      transmitBTData(tmp);
+      break;
+    }
+
+    default: {
+      Serial.println("Unknown operation");
+      MODE = OFF;
+      break;
+    }
+  }
+}
+
 void processCmd() {
   const char* modeString = doc["mode"];
+  const char* operation = doc["op"];
   const char* on = doc["on"];
   const char* off = doc["off"];
-  const char* escSpeed = doc["escSpeed"];
+  const char* esc1Speed = doc["esc1Speed"];
+  const char* esc2Speed = doc["esc2Speed"];
+  const char* esc3Speed = doc["esc3Speed"];
+  const char* balanceSpeed = doc["balanceSpeed"];
+
+  if (operation) {
+    Serial.println("This is an operation");
+    processOperation(operation);
+  }
 
   if (modeString) {
     processMode(modeString);
@@ -354,49 +504,70 @@ void processCmd() {
   if (on) {
     // TODO: Change value for on sequence
     onSequence = atoi(on);
-    Serial.println("On sequence: ");
-    Serial.println(onSequence);
-    secondaryTimeMillis = 0;
+    if (onSequence <= 500) {
+      Serial.println("On sequence: ");
+      Serial.println(onSequence);
+      EEPROM.write(ON_SEQUENCE_ADDR, onSequence);
+      secondaryTimeMillis = 0;
+    }
   }
 
   if (off) {
     // TODO: Change value for off sequence
     offSequence = atoi(off);
-    Serial.println("Off sequence: ");
-    Serial.println(offSequence);
-    secondaryTimeMillis = 0;
+    if (offSequence >= 150) {
+      EEPROM.write(OFF_SEQUENCE_ADDR, offSequence);
+      Serial.println("Off sequence: ");
+      Serial.println(offSequence);
+      secondaryTimeMillis = 0;
+    }
   }
 
-  if (escSpeed) {
-    // TODO: Change value for off sequence
-    int speedValue = atoi(escSpeed);
-    Serial.println("Speed value: ");
-    Serial.println(speedValue);
-    switch (MODE) {
-      case OMD: {
-	OMD_goValue1 = speedValue;
-	break;
-      }
+  if (esc1Speed) {
+    changeSpeed(esc1Speed, goValue1, OMD_GOVALUE1_ADDR);
+  }
 
-      case BALANCE: {
-	BALANCE_goValue = speedValue;
-	break;
-      }
+  if (esc2Speed) {
+    changeSpeed(esc2Speed, goValue2, OMD_GOVALUE2_ADDR);
+  }
 
-      case AXE_550_CALIBRATE: {
-	AXE_550_CALIBRATE_goValue = speedValue;
-	break;
-      }
+  if (esc3Speed) {
+    changeSpeed(esc3Speed, goValue3, OMD_GOVALUE3_ADDR);
+  }
+
+  if (balanceSpeed) {
+    changeSpeed(balanceSpeed, BALANCE_goValue, BALANCE_GOVALUE_ADDR);
+  }
+}
+
+void changeSpeed(int escSpeed, int &goValue, int goValueAddr) {
+  int speedValue = atoi(escSpeed);
+  Serial.println("Changing speed to: ");
+  Serial.println(speedValue);
+
+  if (speedValue > MAX_GO_VALUE) {
+    Serial.println("Exceeding max speed value!!!!!!");
+    return;
+  }
+
+  switch (MODE) {
+    case OMD: {
+      goValue = speedValue;
+      EEPROM.write(goValueAddr, goValue);
+      break;
     }
 
-    int tempGoValue = MODE == OMD ? OMD_goValue1 : (
-      MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
-    );
+    case BALANCE: {
+      goValue1 = speedValue;
+      goValue2 = speedValue;
+      goValue3 = speedValue;
+      EEPROM.write(BALANCE_GOVALUE_ADDR, speedValue);
+      break;
+    }
 
-    if (tempGoValue <= MAX_GO_VALUE) {
-      goValue1 = MODE == OMD ? OMD_goValue1 : (
-	MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
-      );
+    case AXE_550_CALIBRATE: {
+      AXE_550_CALIBRATE_goValue = speedValue;
+      break;
     }
   }
 }
