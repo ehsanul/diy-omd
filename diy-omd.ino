@@ -157,24 +157,9 @@ void loop() {
   transmitRealtimeData();
 }
 
-int test = 0;
-void transmitRealtimeData() {
-  if (bluetoothMillis > 500) {
-    test++;
-    String tmp = String("{\"temp\":") + "\"" + String(test) + "\"}";
-    //transmitBTData(tmp);
-    bluetoothMillis = 0;
-  }
-}
-
 void transmitBTData(String json) {
-  /*char str[50];
-  sprintf(str, "{\"%s\":\"%s\"}", key, value);*/
-
   const char* j = json.c_str();
-
   btSerial.write(j);
-  //memset(str, 0, 50);
 }
 
 void logRPM() {
@@ -503,23 +488,25 @@ void processCmd() {
 
   if (on) {
     // TODO: Change value for on sequence
-    onSequence = atoi(on);
-    if (onSequence <= 500) {
+    int tempOnSequence = atoi(on) * 10;
+    if (tempOnSequence <= 500) {
+      onSequence = tempOnSequence;
+      EEPROM.write(ON_SEQUENCE_ADDR, atoi(on));
+      secondaryTimeMillis = 0;
       Serial.println("On sequence: ");
       Serial.println(onSequence);
-      EEPROM.write(ON_SEQUENCE_ADDR, onSequence);
-      secondaryTimeMillis = 0;
     }
   }
 
   if (off) {
     // TODO: Change value for off sequence
-    offSequence = atoi(off);
-    if (offSequence >= 150) {
-      EEPROM.write(OFF_SEQUENCE_ADDR, offSequence);
+    int tempOffSequence = atoi(off) * 10;
+    if (tempOffSequence >= 150) {
+      offSequence = tempOffSequence;
+      EEPROM.write(OFF_SEQUENCE_ADDR, atoi(off));
+      secondaryTimeMillis = 0;
       Serial.println("Off sequence: ");
       Serial.println(offSequence);
-      secondaryTimeMillis = 0;
     }
   }
 
