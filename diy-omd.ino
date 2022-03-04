@@ -24,9 +24,9 @@ elapsedMillis tempTimeMillis;
 elapsedMillis bluetoothMillis;
 elapsedMillis spinCycleMillis;
 
-const int WINDOW_FOR_PEAK_FREQUENCY = 500;
+const int WINDOW_FOR_PEAK_FREQUENCY = 750;
 
-const int escPin1 = 6;
+const int escPin1 = 2;
 const int escPin2 = 11;
 const int escPin3 = 24;
 const int hallEffectSensorPin = 14;
@@ -43,6 +43,7 @@ float minFrequencyInWindow = 9999999.0;
 float maxFrequencyInWindow = -999999.0;
 
 bool parsingStarted = false;
+bool transmittingData = false;
 
 // Operations
 const int OP_INIT = 100;
@@ -53,7 +54,7 @@ const int escType = QUAD;
 
 const int stopValue = escType == RC ? 90 : 0; // quadcopters don't go in reverse!
 const int reverseValue = 0; // only valid for RC!
-const int OMD_accValue = escType == RC ? 115 : 20;
+const int OMD_accValue = escType == RC ? 115 : 15;
 
 // for quad esc, starting the esc with throttle at max is how to calibrate the
 // max throttle value. otherwise, this seems to be random, causing strange
@@ -113,7 +114,7 @@ void setup() {
   Serial.begin(9600);
   btSerial.begin(9600);
   temperatureSensors.setWaitForConversion(false);
-  initGoValues();
+  loadParameters();
 
   pinMode(hallEffectSensorPin, INPUT);
   ESC1.attach(escPin1, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
@@ -153,8 +154,8 @@ void loop() {
   processIncomingBTData();
   operateMotor();
   processHallSensor();
-  //logRPM();
-  transmitRealtimeData();
+  logRPM();
+  //transmitRealtimeData();
 }
 
 void transmitBTData(String json) {
@@ -163,6 +164,10 @@ void transmitBTData(String json) {
 }
 
 void logRPM() {
+  if (transmittingData) {
+    return;
+  }
+
   if (timeMillis > 50) {
     float frequency = (float) revolutions / ((float) timeMillis / 1000.0);
     float rpm = frequency * 60.0;
@@ -177,14 +182,15 @@ void logRPM() {
 
     if (spinCycleMillis > WINDOW_FOR_PEAK_FREQUENCY) {
       spinCycleMillis = 0;
-      maxFrequencyInWindow = -9999;
-      minFrequencyInWindow = 9999;
 
       String speed = String("{\"min\":") + "\"" + String(minFrequencyInWindow) + "\"}";
       transmitBTData(speed);
       delay(50);
       speed = String("{\"max\":") + "\"" + String(maxFrequencyInWindow) + "\"}";
       transmitBTData(speed);
+
+      maxFrequencyInWindow = -9999;
+      minFrequencyInWindow = 9999;
     }
 
     //Serial.println(rpm);
@@ -220,12 +226,21 @@ void processHallSensor() {
   }
 }
 
-void initGoValues() {
+void loadParameters() {
   int omdGoValue1StoredValue = EEPROM.read(OMD_GOVALUE1_ADDR);
   int omdGoValue2StoredValue = EEPROM.read(OMD_GOVALUE2_ADDR);
   int omdGoValue3StoredValue = EEPROM.read(OMD_GOVALUE3_ADDR);
   int balanceGoValueStoredValue = EEPROM.read(BALANCE_GOVALUE_ADDR);
   int modeStoredValue = EEPROM.read(MODE_ADDR);
+  int onSequenceStoredValue = EEPROM.read(ON_SEQUENCE_ADDR);
+  int offSequenceStoredValue = EEPROM.read(OFF_SEQUENCE_ADDR);
+
+  onSequence = onSequenceStoredValue == 255 ? onSequence : onSequenceStoredValue * 10;
+  offSequence = offSequenceStoredValue == 255 ? offSequence : offSequenceStoredValue * 10;
+  Serial.println("onSequence");
+  Serial.println(onSequence);
+  Serial.println("offSequence");
+  Serial.println(offSequence);
 
   if (modeStoredValue == BALANCE) {
     BALANCE_goValue = balanceGoValueStoredValue == 255 ? BALANCE_goValue : balanceGoValueStoredValue;
@@ -256,10 +271,10 @@ void calibrationInit() {
     ESC3.write(calibrationInitValue);
     if (secondaryTimeMillis > 2000) {
       secondaryTimeMillis = 0;
-      motorState = INIT;
+      motorState = OFF;
     }
   } else {
-    motorState = INIT;
+    motorState = OFF;
   }
 }
 
@@ -360,7 +375,7 @@ void processMode(const char* modeString) {
     }
   }
 
-  initGoValues();
+  loadParameters();
 }
 
 void processIncomingBTData() {
@@ -436,6 +451,8 @@ void processOperation(const char* operation) {
       onSequenceStoredValue = onSequenceStoredValue == 255 ? onSequence : onSequenceStoredValue;
       offSequenceStoredValue = offSequenceStoredValue == 255 ? offSequence : offSequenceStoredValue;
 
+      transmittingData = true;
+
       String tmp = String("{\"esc1\":") + "\"" + String(omdGoValue1StoredValue) + "\"}";
       transmitBTData(tmp);
       delay(50);
@@ -456,6 +473,9 @@ void processOperation(const char* operation) {
       delay(50);
       tmp = String("{\"off\":") + "\"" + String(offSequenceStoredValue) + "\"}";
       transmitBTData(tmp);
+      delay(100);
+
+      transmittingData = false;
       break;
     }
 
