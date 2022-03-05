@@ -9,7 +9,7 @@
 StaticJsonDocument<200> doc;
 
 // Data wire is plugged into pin 2 on the Arduino
-#define ONE_WIRE_BUS 5
+#define ONE_WIRE_BUS 4
 
 // Setup a oneWire instance to communicate with any OneWire devices
 // (not just Maxim/Dallas temperature ICs)
@@ -26,7 +26,7 @@ elapsedMillis spinCycleMillis;
 
 const int WINDOW_FOR_PEAK_FREQUENCY = 750;
 
-const int escPin1 = 2;
+const int escPin1 = 5;
 const int escPin2 = 11;
 const int escPin3 = 24;
 const int hallEffectSensorPin = 14;
