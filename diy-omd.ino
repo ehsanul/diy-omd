@@ -237,11 +237,13 @@ void loadParameters() {
 
   onSequence = onSequenceStoredValue == 255 ? onSequence : onSequenceStoredValue * 10;
   offSequence = offSequenceStoredValue == 255 ? offSequence : offSequenceStoredValue * 10;
+  modeStoredValue = modeStoredValue == 255 ? MODE : modeStoredValue;
   Serial.println("onSequence");
   Serial.println(onSequence);
   Serial.println("offSequence");
   Serial.println(offSequence);
 
+  MODE = modeStoredValue;
   if (modeStoredValue == BALANCE) {
     BALANCE_goValue = balanceGoValueStoredValue == 255 ? BALANCE_goValue : balanceGoValueStoredValue;
     goValue1 = BALANCE_goValue;
@@ -271,10 +273,10 @@ void calibrationInit() {
     ESC3.write(calibrationInitValue);
     if (secondaryTimeMillis > 2000) {
       secondaryTimeMillis = 0;
-      motorState = OFF;
+      motorState = INIT;
     }
   } else {
-    motorState = OFF;
+    motorState = INIT;
   }
 }
 
