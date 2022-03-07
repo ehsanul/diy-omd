@@ -26,7 +26,7 @@ elapsedMillis spinCycleMillis;
 
 const int WINDOW_FOR_PEAK_FREQUENCY = 750;
 
-const int escPin1 = 5;
+const int escPin1 = 2;
 const int escPin2 = 11;
 const int escPin3 = 24;
 const int hallEffectSensorPin = 14;
@@ -343,6 +343,7 @@ void processMode(const char* modeString) {
     case OMD: {
       Serial.println("OMD");
       MODE = OMD;
+      motorState = STOP;
       EEPROM.write(MODE_ADDR, OMD);
       secondaryTimeMillis = 0;
       break;
@@ -351,6 +352,7 @@ void processMode(const char* modeString) {
     case BALANCE: {
       Serial.println("BALANCE");
       MODE = BALANCE;
+      motorState = STOP;
       EEPROM.write(MODE_ADDR, BALANCE);
       break;
     }
@@ -358,13 +360,14 @@ void processMode(const char* modeString) {
     case AXE_550_CALIBRATE: {
       Serial.println("CALIBRATE");
       MODE = AXE_550_CALIBRATE;
+      motorState = STOP;
       EEPROM.write(MODE_ADDR, AXE_550_CALIBRATE);
       break;
     }
 
     case OFF: {
       Serial.println("OFF");
-      MODE = OFF;
+      motorState = OFF;
       EEPROM.write(MODE_ADDR, OFF);
       break;
     }
