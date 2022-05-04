@@ -6,6 +6,68 @@
 #include <DallasTemperature.h>
 #include <EEPROM.h>
 
+
+// Model types
+// RC Car ESC
+#define RC 0
+// Quadcopter ESC
+#define QUAD 1
+// Sidewinder 4 ESC
+#define SIDEWINDER 2
+
+
+// Set model here. No equals, just the value after ESC_TYPE
+#define ESC_TYPE SIDEWINDER
+
+
+#if ESC_TYPE == RC
+
+#define ESC_PIN1 2
+#define ESC_PIN2 11
+#define ESC_PIN3 24
+#define HALL_PIN 14
+
+#define STOP_VALUE 90
+#define REVERSE_VALUE 0
+#define ACC_VALUE 115
+#define CALIBRATE_VALUE 180
+#define OMD_GO_VALUE 135
+#define BALANCE_GO_VALUE 108
+#define MAX_GO_VALUE 130
+
+#elif ESC_TYPE == QUAD
+
+#define ESC_PIN1 2
+#define ESC_PIN2 11
+#define ESC_PIN3 24
+#define HALL_PIN 14
+
+#define STOP_VALUE 0
+#define REVERSE_VALUE 0
+#define ACC_VALUE 15
+#define CALIBRATE_VALUE 180
+#define OMD_GO_VALUE 27
+#define BALANCE_GO_VALUE 20
+#define MAX_GO_VALUE 60
+
+#elif ESC_TYPE == SIDEWINDER
+
+#define ESC_PIN1 37
+#define ESC_PIN2 15
+#define ESC_PIN3 14
+#define HALL_PIN 23
+
+#define STOP_VALUE 90
+#define REVERSE_VALUE 0
+#define ACC_VALUE 98
+#define CALIBRATE_VALUE 180
+#define OMD_GO_VALUE 99
+#define BALANCE_GO_VALUE 98
+#define MAX_GO_VALUE 110
+
+#endif
+
+
 StaticJsonDocument<200> doc;
 
 // Data wire is plugged into pin 2 on the Arduino
@@ -26,10 +88,10 @@ elapsedMillis spinCycleMillis;
 
 const int WINDOW_FOR_PEAK_FREQUENCY = 750;
 
-const int escPin1 = 2;
-const int escPin2 = 11;
-const int escPin3 = 24;
-const int hallEffectSensorPin = 14;
+const int escPin1 = ESC_PIN1;
+const int escPin2 = ESC_PIN2;
+const int escPin3 = ESC_PIN3;
+const int hallEffectSensorPin = HALL_PIN;  
 
 Servo ESC1;     // create servo object to control the ESC
 Servo ESC2;     // create servo object to control the ESC
@@ -48,18 +110,15 @@ bool transmittingData = false;
 // Operations
 const int OP_INIT = 100;
 
-const int RC = 0; // rc cars
-const int QUAD = 1; // quadcopters
-const int escType = QUAD;
 
-const int stopValue = escType == RC ? 90 : 0; // quadcopters don't go in reverse!
-const int reverseValue = 0; // only valid for RC!
-const int OMD_accValue = escType == RC ? 115 : 15;
+const int stopValue = STOP_VALUE; // quadcopters don't go in reverse!
+const int reverseValue = REVERSE_VALUE; // only valid for RC!
+const int OMD_accValue = ACC_VALUE;
 
 // for quad esc, starting the esc with throttle at max is how to calibrate the
 // max throttle value. otherwise, this seems to be random, causing strange
 // speed fluctuations on later runs
-const int calibrationInitValue = 180;
+const int calibrationInitValue = CALIBRATE_VALUE;
 
 int OMD_GOVALUE1_ADDR = 1;
 int OMD_GOVALUE2_ADDR = 2;
@@ -70,15 +129,14 @@ int MODE_ADDR = 6;
 int ON_SEQUENCE_ADDR = 8;
 int OFF_SEQUENCE_ADDR = 12;
 
-/*int OMD_goValue1 = escType == RC ? 135 : 57;
-int OMD_goValue2 = escType == RC ? 135 : 48;
-int OMD_goValue3 = escType == RC ? 135 : 51;*/
-int OMD_goValue1 = escType == RC ? 135 : 27;
-int OMD_goValue2 = escType == RC ? 135 : 23;
-int OMD_goValue3 = escType == RC ? 135 : 23;
+int OMD_goValue1 = OMD_GO_VALUE;
+int OMD_goValue2 = OMD_GO_VALUE;
+int OMD_goValue3 = OMD_GO_VALUE;
 
 
-int BALANCE_goValue = escType == RC ? 108 : 20; // go slower while we balance!
+
+int BALANCE_goValue = BALANCE_GO_VALUE;
+
 int AXE_550_CALIBRATE_goValue = 180;
 int goValue1 = MODE == OMD ? OMD_goValue1 : (
   MODE == BALANCE ? BALANCE_goValue : AXE_550_CALIBRATE_goValue
@@ -99,7 +157,6 @@ SoftwareSerial btSerial(7,8); // RX, TX (from pinout, not BL)
 String inData;
 const char PARSE_END = '>';
 const char PARSE_START = '<';
-const int MAX_GO_VALUE = escType == RC ? 130 : 60;
 
 char MODES[] = "{\"BALANCE\":\"100\",\"OMD\":\"101\", \"CALIBRATE\":\"102\",\"OFF\": \"103\"}";
 char OPERATIONS[] = "{\"INIT\":\"100\"}";
@@ -117,15 +174,33 @@ void setup() {
   loadParameters();
 
   pinMode(hallEffectSensorPin, INPUT);
+
+  delay(3000);
   ESC1.attach(escPin1, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
   ESC2.attach(escPin2, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
-  ESC3.attach(escPin3, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
-  delay(1000);
+  ESC3.attach(escPin3, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds)
+
+  if (ESC_TYPE == SIDEWINDER){
+    Serial.println("Ready Sidewinder ESC");
+//    delay(3000);
+//    ESC1.write(180);
+//    ESC2.write(180);
+//    ESC3.write(180);
+//    delay(1000);
+//    ESC1.write(0);
+//    ESC2.write(0);
+//    ESC3.write(0);
+//    delay(1000);
+    ESC1.write(90);
+    ESC2.write(90);
+    ESC3.write(90);
+    delay(4000);
+  }
 
   timeMillis = 0;
   secondaryTimeMillis = 0;
   tempTimeMillis = 0;
-
+  Serial.println("Setup complete");
 }
 
 // we use two thresholds to ensure we have the right direction of change, and
@@ -267,7 +342,7 @@ void loadParameters() {
 }
 
 void calibrationInit() {
-  if (escType == QUAD) {
+  if (ESC_TYPE == QUAD) {
     ESC1.write(calibrationInitValue);
     ESC2.write(calibrationInitValue);
     ESC3.write(calibrationInitValue);
@@ -286,7 +361,7 @@ void init() {
   ESC3.write(stopValue);
   //Serial.println("init");
   if (secondaryTimeMillis > 4000 && MODE == OMD) {
-    //Serial.println("init done");
+    Serial.println("init done (OMD mode)");
     motorState = ACC;
     secondaryTimeMillis = 0;
   } else if (secondaryTimeMillis > 4000 && MODE == BALANCE) {
@@ -311,7 +386,7 @@ void go() {
   ESC2.write(goValue2);
   ESC3.write(goValue3);
   if (secondaryTimeMillis > onSequence && MODE == OMD) {
-    //Serial.println("go done");
+    Serial.println("go done");
     motorState = STOP;
     secondaryTimeMillis = 0;
   } else if (MODE == BALANCE) {
@@ -591,6 +666,7 @@ void accelerate() {
   ESC2.write(OMD_accValue);
   ESC3.write(OMD_accValue);
   if (secondaryTimeMillis > ACC_DELAY && MODE == OMD) {
+    Serial.println("Acc done");
     motorState = STOP;
     secondaryTimeMillis = 0;
   }
@@ -603,6 +679,7 @@ void stop() {
   ESC2.write(stopValue);
   ESC3.write(stopValue);
   if (secondaryTimeMillis > offSequence && numGos < 7200) {
+    Serial.println("Stop done");
     numGos++;
     motorState = GO;
     secondaryTimeMillis = 0;
