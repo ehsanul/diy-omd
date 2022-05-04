@@ -219,7 +219,19 @@ const int STOP = 4;
 const int REVERSE = 5;
 int motorState = CALIBRATION_INIT;
 
-void loop() {
+bool hard_stop = false;
+
+void loop() { 
+  if (hard_stop){
+    Serial.println("Hard stop is on, must restart Teensy");
+    ESC1.write(STOP_VALUE);
+    ESC2.write(STOP_VALUE);
+    ESC3.write(STOP_VALUE);
+    delay(10000);
+    return;
+  }
+
+   
   if (tempTimeMillis > 60000) {
     tempTimeMillis = 0;
     temperatureSensors.requestTemperatures();
