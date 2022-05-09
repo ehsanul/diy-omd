@@ -31,7 +31,9 @@
 #define REVERSE_VALUE 0
 #define ACC_VALUE 115
 #define CALIBRATE_VALUE 180
-#define OMD_GO_VALUE 135
+#define OMD_GO_VALUE_1 135
+#define OMD_GO_VALUE_2 135
+#define OMD_GO_VALUE_3 135
 #define BALANCE_GO_VALUE 108
 #define MAX_GO_VALUE 130
 
@@ -46,7 +48,9 @@
 #define REVERSE_VALUE 0
 #define ACC_VALUE 15
 #define CALIBRATE_VALUE 180
-#define OMD_GO_VALUE 27
+#define OMD_GO_VALUE_1 27
+#define OMD_GO_VALUE_2 23
+#define OMD_GO_VALUE_3 23
 #define BALANCE_GO_VALUE 20
 #define MAX_GO_VALUE 60
 
@@ -61,7 +65,9 @@
 #define REVERSE_VALUE 0
 #define ACC_VALUE 98
 #define CALIBRATE_VALUE 180
-#define OMD_GO_VALUE 99
+#define OMD_GO_VALUE_1 99
+#define OMD_GO_VALUE_2 99
+#define OMD_GO_VALUE_3 99
 #define BALANCE_GO_VALUE 98
 #define MAX_GO_VALUE 110
 
@@ -129,9 +135,9 @@ int MODE_ADDR = 6;
 int ON_SEQUENCE_ADDR = 8;
 int OFF_SEQUENCE_ADDR = 12;
 
-int OMD_goValue1 = OMD_GO_VALUE;
-int OMD_goValue2 = OMD_GO_VALUE;
-int OMD_goValue3 = OMD_GO_VALUE;
+int OMD_goValue1 = OMD_GO_VALUE_1;
+int OMD_goValue2 = OMD_GO_VALUE_2;
+int OMD_goValue3 = OMD_GO_VALUE_3;
 
 
 
@@ -179,23 +185,6 @@ void setup() {
   ESC1.attach(escPin1, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
   ESC2.attach(escPin2, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) 
   ESC3.attach(escPin3, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds)
-
-  if (ESC_TYPE == SIDEWINDER){
-    Serial.println("Ready Sidewinder ESC");
-//    delay(3000);
-//    ESC1.write(180);
-//    ESC2.write(180);
-//    ESC3.write(180);
-//    delay(1000);
-//    ESC1.write(0);
-//    ESC2.write(0);
-//    ESC3.write(0);
-//    delay(1000);
-    ESC1.write(90);
-    ESC2.write(90);
-    ESC3.write(90);
-    delay(4000);
-  }
 
   timeMillis = 0;
   secondaryTimeMillis = 0;
