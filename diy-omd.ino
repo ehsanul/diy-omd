@@ -63,12 +63,12 @@
 
 #define STOP_VALUE 90
 #define REVERSE_VALUE 0
-#define ACC_VALUE 98
+#define ACC_VALUE 99
 #define CALIBRATE_VALUE 180
-#define OMD_GO_VALUE_1 99
-#define OMD_GO_VALUE_2 99
-#define OMD_GO_VALUE_3 99
-#define BALANCE_GO_VALUE 98
+#define OMD_GO_VALUE_1 101
+#define OMD_GO_VALUE_2 101
+#define OMD_GO_VALUE_3 101
+#define BALANCE_GO_VALUE 100
 #define MAX_GO_VALUE 110
 
 #endif
