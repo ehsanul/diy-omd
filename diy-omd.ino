@@ -36,6 +36,8 @@
 #define OMD_GO_VALUE_3 135
 #define BALANCE_GO_VALUE 108
 #define MAX_GO_VALUE 130
+#define BLUETOOTH_RX 7
+#define BLUETOOTH_TX 8
 
 #elif ESC_TYPE == QUAD
 
@@ -53,6 +55,8 @@
 #define OMD_GO_VALUE_3 23
 #define BALANCE_GO_VALUE 20
 #define MAX_GO_VALUE 60
+#define BLUETOOTH_RX 7
+#define BLUETOOTH_TX 8
 
 #elif ESC_TYPE == SIDEWINDER
 
@@ -70,6 +74,9 @@
 #define OMD_GO_VALUE_3 101
 #define BALANCE_GO_VALUE 100
 #define MAX_GO_VALUE 110
+
+#define BLUETOOTH_RX 21
+#define BLUETOOTH_TX 20
 
 #endif
 
@@ -159,7 +166,7 @@ int numGos = 0;
 int onSequence = 250;
 int offSequence = 250;
 
-SoftwareSerial btSerial(21, 20); // Was 7, 8. RX, TX (from pinout, not BL)
+SoftwareSerial btSerial(BLUETOOTH_RX, BLUETOOTH_TX); // Was 7, 8. RX, TX (from pinout, not BL)
 String inData;
 const char PARSE_END = '>';
 const char PARSE_START = '<';
