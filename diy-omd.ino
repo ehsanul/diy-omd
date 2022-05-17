@@ -64,7 +64,7 @@
 #define STOP_VALUE 90
 #define REVERSE_VALUE 0
 #define ACC_VALUE 99
-#define CALIBRATE_VALUE 180
+#define CALIBRATE_VALUE 90
 #define OMD_GO_VALUE_1 101
 #define OMD_GO_VALUE_2 101
 #define OMD_GO_VALUE_3 101
@@ -159,7 +159,7 @@ int numGos = 0;
 int onSequence = 250;
 int offSequence = 250;
 
-SoftwareSerial btSerial(7,8); // RX, TX (from pinout, not BL)
+SoftwareSerial btSerial(21, 20); // Was 7, 8. RX, TX (from pinout, not BL)
 String inData;
 const char PARSE_END = '>';
 const char PARSE_START = '<';
@@ -343,7 +343,7 @@ void loadParameters() {
 }
 
 void calibrationInit() {
-  if (ESC_TYPE == QUAD) {
+  if (ESC_TYPE == QUAD || ESC_TYPE == SIDEWINDER) {
     ESC1.write(calibrationInitValue);
     ESC2.write(calibrationInitValue);
     ESC3.write(calibrationInitValue);
