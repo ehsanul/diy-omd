@@ -16,6 +16,10 @@
 #define SIDEWINDER 2
 
 
+// How many hours to operate for in go mode before stopping
+#define HOURS_OPERATION 1
+
+
 // Set model here. No equals, just the value after ESC_TYPE
 #define ESC_TYPE SIDEWINDER
 
@@ -166,6 +170,11 @@ int numGos = 0;
 int onSequence = 250;
 int offSequence = 250;
 
+// Given the number of hours, and how long the sequence is for, calculate number of iterations
+// before stopping
+double period_operation_seconds = (onSequence + offSequence) / 1000;
+int num_iterations = int(HOURS_OPERATION * 3600 / period_operation_seconds);
+
 SoftwareSerial btSerial(BLUETOOTH_RX, BLUETOOTH_TX); // Was 7, 8. RX, TX (from pinout, not BL)
 String inData;
 const char PARSE_END = '>';
@@ -196,6 +205,7 @@ void setup() {
   timeMillis = 0;
   secondaryTimeMillis = 0;
   tempTimeMillis = 0;
+  updateNumIterations();
   Serial.println("Setup complete");
 }
 
@@ -309,6 +319,15 @@ void processHallSensor() {
   }
 }
 
+void updateNumIterations(){
+  // Given the number of hours, and how long the sequence is for, calculate number of iterations
+  // before stopping.
+  period_operation_seconds = (onSequence + offSequence) / 1000;
+  num_iterations = int(HOURS_OPERATION * 3600 / period_operation_seconds);
+  Serial.print("Number of iterations is: ");
+  Serial.println(num_iterations);
+}
+
 void loadParameters() {
   int omdGoValue1StoredValue = EEPROM.read(OMD_GOVALUE1_ADDR);
   int omdGoValue2StoredValue = EEPROM.read(OMD_GOVALUE2_ADDR);
@@ -325,6 +344,8 @@ void loadParameters() {
   Serial.println(onSequence);
   Serial.println("offSequence");
   Serial.println(offSequence);
+
+  updateNumIterations();
 
   MODE = modeStoredValue;
   if (modeStoredValue == BALANCE) {
@@ -603,6 +624,7 @@ void processCmd() {
       secondaryTimeMillis = 0;
       Serial.println("On sequence: ");
       Serial.println(onSequence);
+      updateNumIterations();
     }
   }
 
@@ -615,6 +637,7 @@ void processCmd() {
       secondaryTimeMillis = 0;
       Serial.println("Off sequence: ");
       Serial.println(offSequence);
+      updateNumIterations();
     }
   }
 
@@ -686,7 +709,7 @@ void stop() {
   ESC1.write(stopValue);
   ESC2.write(stopValue);
   ESC3.write(stopValue);
-  if (secondaryTimeMillis > offSequence && numGos < 7200) {
+  if (secondaryTimeMillis > offSequence && numGos < num_iterations) {
     Serial.println("Stop done");
     numGos++;
     motorState = GO;
