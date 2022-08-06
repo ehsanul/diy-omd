@@ -17,7 +17,7 @@
 
 
 // How many hours to operate for in go mode before stopping
-#define HOURS_OPERATION 0.01
+#define HOURS_OPERATION 4
 
 
 // Set model here. No equals, just the value after ESC_TYPE
