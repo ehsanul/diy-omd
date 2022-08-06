@@ -17,7 +17,7 @@
 
 
 // How many hours to operate for in go mode before stopping
-#define HOURS_OPERATION 1
+#define HOURS_OPERATION 0.01
 
 
 // Set model here. No equals, just the value after ESC_TYPE
@@ -149,7 +149,7 @@ int OFF_SEQUENCE_ADDR = 12;
 int OMD_goValue1 = OMD_GO_VALUE_1;
 int OMD_goValue2 = OMD_GO_VALUE_2;
 int OMD_goValue3 = OMD_GO_VALUE_3;
-
+bool stopMessageSent = false;
 
 
 int BALANCE_goValue = BALANCE_GO_VALUE;
@@ -172,7 +172,7 @@ int offSequence = 250;
 
 // Given the number of hours, and how long the sequence is for, calculate number of iterations
 // before stopping
-double period_operation_seconds = (onSequence + offSequence) / 1000;
+double period_operation_seconds = double(onSequence + offSequence) / 1000;
 int num_iterations = int(HOURS_OPERATION * 3600 / period_operation_seconds);
 
 SoftwareSerial btSerial(BLUETOOTH_RX, BLUETOOTH_TX); // Was 7, 8. RX, TX (from pinout, not BL)
@@ -207,6 +207,13 @@ void setup() {
   tempTimeMillis = 0;
   updateNumIterations();
   Serial.println("Setup complete");
+
+   Serial.print("GO mode operation time: ");
+  Serial.print(HOURS_OPERATION * 3600);
+  Serial.println(" seconds.");
+
+  Serial.print("Number iterations: ");
+  Serial.println(num_iterations);
 }
 
 // we use two thresholds to ensure we have the right direction of change, and
@@ -223,6 +230,7 @@ const int ACC = 2;
 const int GO = 3;
 const int STOP = 4;
 const int REVERSE = 5;
+const int PAUSE = 6; // Stops motors, but doesn't reset
 int motorState = CALIBRATION_INIT;
 
 bool hard_stop = false;
@@ -322,10 +330,12 @@ void processHallSensor() {
 void updateNumIterations(){
   // Given the number of hours, and how long the sequence is for, calculate number of iterations
   // before stopping.
-  period_operation_seconds = (onSequence + offSequence) / 1000;
+  period_operation_seconds = double(onSequence + offSequence) / 1000;
   num_iterations = int(HOURS_OPERATION * 3600 / period_operation_seconds);
   Serial.print("Number of iterations is: ");
   Serial.println(num_iterations);
+  Serial.print("Period [s]: ");
+  Serial.println(period_operation_seconds);
 }
 
 void loadParameters() {
@@ -406,7 +416,7 @@ void init() {
       motorState = GO;
       secondaryTimeMillis = 0;
     }
-  }
+  }  
 }
 
 void go() {
@@ -437,6 +447,9 @@ void go() {
       secondaryTimeMillis = 0;
     }
   }
+
+  // We haven't sent a stop message to the serial since we last started
+  stopMessageSent = false;
 }
 
 void processMode(const char* modeString) {
@@ -466,6 +479,13 @@ void processMode(const char* modeString) {
       MODE = AXE_550_CALIBRATE;
       motorState = STOP;
       EEPROM.write(MODE_ADDR, AXE_550_CALIBRATE);
+      break;
+    }
+
+    case PAUSE: {
+      Serial.println("PAUSE");
+      motorState = PAUSE;
+      EEPROM.write(MODE_ADDR, PAUSE);
       break;
     }
 
@@ -710,10 +730,22 @@ void stop() {
   ESC2.write(stopValue);
   ESC3.write(stopValue);
   if (secondaryTimeMillis > offSequence && numGos < num_iterations) {
-    Serial.println("Stop done");
     numGos++;
+    
+    Serial.print("Stop done. Iteration ");
+    Serial.print(numGos);
+    Serial.print("/");
+    Serial.println(num_iterations);
+    
     motorState = GO;
     secondaryTimeMillis = 0;
+  }else if (secondaryTimeMillis > offSequence && numGos >= num_iterations){
+    // End of sequence
+    if (!stopMessageSent){
+      Serial.println("OMD Sequence finished due to reaching iteration limit");
+    }
+
+    stopMessageSent = true;
   }
 }
 
@@ -745,11 +777,18 @@ void operateMotor() {
     stop();
   } else if (motorState == REVERSE) {
     axe_550_reverse();
+  } else if (motorState == PAUSE) {
+    digitalWrite(13, LOW);
+    ESC1.write(stopValue);
+    ESC2.write(stopValue);
+    ESC3.write(stopValue);
+    numGos = 0;
   } else if (motorState == OFF) {
     digitalWrite(13, LOW);
     ESC1.write(stopValue);
     ESC2.write(stopValue);
     ESC3.write(stopValue);
+    numGos = 0;
   }
 }
 
